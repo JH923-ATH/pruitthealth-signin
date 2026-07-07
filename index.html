@@ -157,11 +157,12 @@ const SAFETY_RULES = [
   "I am fit for duty and not impaired",
 ];
 
-/* Photo compression settings. 1200px longest side + JPEG q0.75 keeps most
-   delivery photos under 400 KB while staying legible for pallet labels.
-   Lower than 1200 starts making small print unreadable; higher pushes
-   older phones over their per tab memory budget when decoding. */
-const PHOTO_MAX_DIM = 1200;
+/* Photo compression settings. 1000px longest side + JPEG q0.75 keeps most
+   delivery photos under 350 KB while staying legible for pallet labels and
+   printed BOL text. Two photos per delivery means memory is tight on older
+   phones, so we err smaller and store photos as Blobs (not base64 strings)
+   throughout capture. Base64 conversion happens only at POST time. */
+const PHOTO_MAX_DIM = 1000;
 const PHOTO_JPEG_QUALITY = 0.75;
 /* ================== END CONFIG ===================== */
 
@@ -222,23 +223,12 @@ function viewAction() {
   document.getElementById('bBack').onclick = viewSites;
 }
 
-/* Turn a File (from a camera capture) into a compressed JPEG data URL.
-   Runs entirely in the browser so nothing hits the server until submit.
-
-   Modern phone cameras produce 12 to 48 megapixel photos. Reading the raw
-   file as a data URL and decoding the full resolution into an Image blows
-   past iOS Safari's per tab memory limit and shows "unable to complete
-   because of low memory". Two tricks avoid it:
-
-     1. createImageBitmap(file, { resizeWidth, resizeHeight, resizeQuality })
-        decodes at a reduced size in one step. No giant intermediate.
-     2. If createImageBitmap is missing or refuses (rare, older browsers),
-        fall back to URL.createObjectURL on the raw file, which is much
-        cheaper than a base64 data URL string. */
+/* Turn a File (from a camera capture) into a compressed JPEG Blob.
+   Returns a Blob (not a base64 data URL string) to save memory on phones
+   holding TWO delivery photos at once. Preview uses URL.createObjectURL on
+   the blob. Base64 conversion happens only at POST time. */
 function compressPhoto(file, maxDim, quality) {
-  // Fast path: createImageBitmap with resize options. iOS 15+, Android Chrome.
   if (typeof createImageBitmap === 'function') {
-    // First peek at the natural size cheaply so we can pick the right target.
     return createImageBitmap(file).then(peek => {
       let w = peek.width, h = peek.height;
       peek.close && peek.close();
@@ -250,15 +240,25 @@ function compressPhoto(file, maxDim, quality) {
         resizeHeight: targetH,
         resizeQuality: 'high'
       });
-    }).then(bmp => {
-      const canvas = document.createElement('canvas');
-      canvas.width = bmp.width; canvas.height = bmp.height;
-      canvas.getContext('2d').drawImage(bmp, 0, 0);
-      bmp.close && bmp.close();
-      return canvas.toDataURL('image/jpeg', quality);
-    }).catch(() => compressPhotoFallback_(file, maxDim, quality));
+    }).then(bmp => canvasToJpegBlob_(bmp, quality))
+      .catch(() => compressPhotoFallback_(file, maxDim, quality));
   }
   return compressPhotoFallback_(file, maxDim, quality);
+}
+
+function canvasToJpegBlob_(bmp, quality) {
+  return new Promise((resolve, reject) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = bmp.width; canvas.height = bmp.height;
+    canvas.getContext('2d').drawImage(bmp, 0, 0);
+    bmp.close && bmp.close();
+    canvas.toBlob(blob => {
+      // Explicitly zero the canvas so the backing store can be freed.
+      canvas.width = 0; canvas.height = 0;
+      if (blob) resolve(blob);
+      else      reject(new Error('encode failed'));
+    }, 'image/jpeg', quality);
+  });
 }
 
 function compressPhotoFallback_(file, maxDim, quality) {
@@ -274,8 +274,13 @@ function compressPhotoFallback_(file, maxDim, quality) {
       const canvas = document.createElement('canvas');
       canvas.width = w; canvas.height = h;
       canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      img.src = '';
       URL.revokeObjectURL(url);
-      resolve(canvas.toDataURL('image/jpeg', quality));
+      canvas.toBlob(blob => {
+        canvas.width = 0; canvas.height = 0;
+        if (blob) resolve(blob);
+        else      reject(new Error('encode failed'));
+      }, 'image/jpeg', quality);
     };
     img.onerror = () => {
       URL.revokeObjectURL(url);
@@ -285,11 +290,20 @@ function compressPhotoFallback_(file, maxDim, quality) {
   });
 }
 
-/* Attach a photo capture input to its preview + status + button label.
-   Runs the file through compressPhoto, updates the UI, and stores the resulting
-   data URL via setUrl. On failure, calls clearUrl. */
+/* Blob → base64 data URL. Runs only once per photo, at submit time. */
+function blobToDataUrl_(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('read failed'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+/* Attach a photo capture input. On file pick, compress to a Blob, store in the
+   right module level slot ('bol' or 'mat'), and preview via an object URL. */
 function wirePhotoInput_(inputId, previewId, statusId, btnLabelId,
-                         idleLabel, retakeLabel, setUrl, clearUrl) {
+                         retakeLabel, slot) {
   document.getElementById(inputId).onchange = async (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
@@ -300,24 +314,34 @@ function wirePhotoInput_(inputId, previewId, statusId, btnLabelId,
     stat.textContent = 'Processing photo…';
     stat.style.display = '';
     try {
-      const dataUrl = await compressPhoto(file, PHOTO_MAX_DIM, PHOTO_JPEG_QUALITY);
-      setUrl(dataUrl);
-      prev.src = dataUrl;
+      const blob = await compressPhoto(file, PHOTO_MAX_DIM, PHOTO_JPEG_QUALITY);
+      // Free the prior object URL before making a new one.
+      if (slot === 'bol') {
+        if (bolPreviewUrl) URL.revokeObjectURL(bolPreviewUrl);
+        bolPhotoBlob = blob;
+        bolPreviewUrl = URL.createObjectURL(blob);
+        prev.src = bolPreviewUrl;
+      } else {
+        if (materialPreviewUrl) URL.revokeObjectURL(materialPreviewUrl);
+        materialPhotoBlob = blob;
+        materialPreviewUrl = URL.createObjectURL(blob);
+        prev.src = materialPreviewUrl;
+      }
       prev.style.display = 'block';
-      const approxKb = Math.round((dataUrl.length * 3 / 4) / 1024);
+      const approxKb = Math.round(blob.size / 1024);
       stat.className = 'del-hint ok';
       stat.textContent = 'Photo ready (' + approxKb + ' KB). Tap again to retake.';
       btnLbl.textContent = retakeLabel;
     } catch (err) {
-      clearUrl();
+      if (slot === 'bol') { bolPhotoBlob = null; }
+      else                { materialPhotoBlob = null; }
       stat.className = 'del-hint err';
       stat.textContent = 'Could not process photo. Try again.';
     }
   };
 }
 
-/* Reset a photo capture UI back to its "not taken yet" state. Used when the
-   user switches away from Delivery. */
+/* Reset a photo capture UI back to its "not taken yet" state. */
 function resetPhotoUi_(prefix, idleLabel) {
   const prev = document.getElementById(prefix + 'Preview');
   const stat = document.getElementById(prefix + 'PhotoStatus');
@@ -327,18 +351,30 @@ function resetPhotoUi_(prefix, idleLabel) {
   if (btnLbl) { btnLbl.textContent = idleLabel; }
 }
 
+/* Drop all photo state, freeing any live object URLs. */
+function clearPhotoState_() {
+  if (bolPreviewUrl)      URL.revokeObjectURL(bolPreviewUrl);
+  if (materialPreviewUrl) URL.revokeObjectURL(materialPreviewUrl);
+  bolPhotoBlob = null;
+  materialPhotoBlob = null;
+  bolPreviewUrl = null;
+  materialPreviewUrl = null;
+}
+
 /* Delivery drivers get an extra card with material, PO, for, notes, and TWO
    required photos: the material for condition proof, and the bill of lading
    for OCR + audit. The `capture="environment"` attribute asks the browser to
    open the rear camera. Some older browsers still fall back to a file picker;
    that is out of our control from HTML alone. */
 const DELIVERY_FOR_OPTIONS = TRADES.filter(t => t !== 'Delivery' && t !== 'Vendor / Other');
-let materialPhotoDataUrl = null;   // condition proof
-let bolPhotoDataUrl = null;        // for OCR
+let materialPhotoBlob = null;   // condition proof, kept as Blob to save memory
+let bolPhotoBlob = null;        // for OCR
+// Track the preview object URLs so we can revoke them and release memory.
+let materialPreviewUrl = null;
+let bolPreviewUrl = null;
 
 function viewSignIn() {
-  materialPhotoDataUrl = null;
-  bolPhotoDataUrl = null;
+  clearPhotoState_();
   render(`
     <div class="stack">
       <div class="card stack">
@@ -353,15 +389,6 @@ function viewSignIn() {
 
       <div class="card stack" id="dCard" style="display:none">
         <div class="del-hint">Deliveries need two photos: the bill of lading and the material itself. We will read the BOL automatically.</div>
-        <label><span class="lab">Material delivered</span>
-          <input id="fMat" placeholder="Optional if the BOL is clear"></label>
-        <label><span class="lab">PO or ticket #</span>
-          <input id="fPo" placeholder="Optional, we try to read it from the BOL"></label>
-        <label><span class="lab">For (trade or department)</span>
-          <select id="fFor"><option value="">Optional&hellip;</option>
-            ${DELIVERY_FOR_OPTIONS.map(t => `<option>${esc(t)}</option>`).join('')}</select></label>
-        <label><span class="lab">Notes</span>
-          <textarea id="fNotes" rows="2" placeholder="Optional"></textarea></label>
 
         <div>
           <span class="lab">1. Photo of the bill of lading *</span>
@@ -382,6 +409,16 @@ function viewSignIn() {
           <img id="matPreview" class="photo-preview" alt="">
           <div id="matPhotoStatus" class="del-hint" style="margin-top:8px;display:none"></div>
         </div>
+
+        <label><span class="lab">Material delivered</span>
+          <input id="fMat" placeholder="Optional if the BOL is clear"></label>
+        <label><span class="lab">PO or ticket #</span>
+          <input id="fPo" placeholder="Optional, we try to read it from the BOL"></label>
+        <label><span class="lab">For (trade or department)</span>
+          <select id="fFor"><option value="">Optional&hellip;</option>
+            ${DELIVERY_FOR_OPTIONS.map(t => `<option>${esc(t)}</option>`).join('')}</select></label>
+        <label><span class="lab">Notes</span>
+          <textarea id="fNotes" rows="2" placeholder="Optional"></textarea></label>
       </div>
 
       <div class="rules">
@@ -414,20 +451,17 @@ function viewSignIn() {
       dCard.style.display = '';
     } else {
       dCard.style.display = 'none';
-      materialPhotoDataUrl = null;
-      bolPhotoDataUrl = null;
+      clearPhotoState_();
       resetPhotoUi_('bol', 'Scan bill of lading');
       resetPhotoUi_('mat', 'Photo of the material');
     }
   };
 
   wirePhotoInput_('fBolPhoto', 'bolPreview', 'bolPhotoStatus', 'bolPhotoBtnLabel',
-    'Scan bill of lading', 'Retake bill of lading',
-    url => { bolPhotoDataUrl = url; }, () => { bolPhotoDataUrl = null; });
+    'Retake bill of lading', 'bol');
 
   wirePhotoInput_('fMatPhoto', 'matPreview', 'matPhotoStatus', 'matPhotoBtnLabel',
-    'Photo of the material', 'Retake material photo',
-    url => { materialPhotoDataUrl = url; }, () => { materialPhotoDataUrl = null; });
+    'Retake material photo', 'mat');
 
   document.getElementById('bGo').onclick = async () => {
     clearBanners();
@@ -447,8 +481,8 @@ function viewSignIn() {
       po       = document.getElementById('fPo').value.trim();
       forTrade = document.getElementById('fFor').value;
       notes    = document.getElementById('fNotes').value.trim();
-      if (!bolPhotoDataUrl)      { banner('A photo of the bill of lading is required.'); return; }
-      if (!materialPhotoDataUrl) { banner('A photo of the material is required.'); return; }
+      if (!bolPhotoBlob)      { banner('A photo of the bill of lading is required.'); return; }
+      if (!materialPhotoBlob) { banner('A photo of the material is required.'); return; }
     }
 
     if (!document.getElementById('fAck').checked) {
@@ -465,8 +499,19 @@ function viewSignIn() {
       payload.po = po;
       payload.forTrade = forTrade;
       payload.notes = notes;
-      payload.materialPhotoDataUrl = materialPhotoDataUrl;
-      payload.bolPhotoDataUrl = bolPhotoDataUrl;
+      // Convert Blobs to base64 only at submit time. Doing this earlier
+      // (during capture) is what caused the "unable to complete because of
+      // low memory" errors on older iPhones.
+      const btn = document.getElementById('bGo');
+      btn.disabled = true; btn.textContent = 'Preparing photos…';
+      try {
+        payload.bolPhotoDataUrl      = await blobToDataUrl_(bolPhotoBlob);
+        payload.materialPhotoDataUrl = await blobToDataUrl_(materialPhotoBlob);
+      } catch (err) {
+        btn.disabled = false; btn.textContent = 'Sign in now';
+        banner('Could not prepare photos. Try again.');
+        return;
+      }
     }
 
     await submit(payload,
