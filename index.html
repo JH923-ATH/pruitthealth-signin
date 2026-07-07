@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PruittHealth Construction Services · Jobsite Sign In</title>
+<style>
+  /* ===== TYPEFACE SWAP POINT =====
+     To match PruittHealth's site font, change the family name in
+     BOTH lines below (the import and the --font value). If their
+     font is commercial (not on Google Fonts), use the closest free
+     equivalent or ask marketing for a web license. */
+  @import url('https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;600;700;800;900&display=swap');
+  :root {
+    --font: 'Nunito Sans', system-ui, Arial, sans-serif;
+    /* PruittHealth brand greens. If marketing has official hex
+       values, paste them here and the whole app updates. */
+    --ph-dark:   #17402A;   /* deep pine: headers, primary text accents */
+    --ph-green:  #4E9D54;   /* leaf green: actions, highlights */
+    --ph-soft:   #EAF3EA;   /* soft green tint */
+    --ph-mist:   #F6F8F5;   /* page background */
+    --ph-line:   #D9E5D8;   /* hairline borders */
+    --ph-ink:    #22302A;
+    --ph-out:    #5B6B61;   /* sign out */
+    --ph-err:    #A0442F;
+    --radius: 16px;
+    --shadow: 0 2px 10px rgba(23, 64, 42, .08);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--font); color: var(--ph-ink);
+         background: linear-gradient(180deg, #FFFFFF 0%, var(--ph-mist) 30%, var(--ph-mist) 100%); }
+  .wrap { max-width: 480px; margin: 0 auto; min-height: 100vh; display: flex; flex-direction: column; }
+  header { background: #fff; border-bottom: 1px solid var(--ph-line); box-shadow: var(--shadow); }
+  .accent { height: 6px; background: linear-gradient(90deg, var(--ph-dark), var(--ph-green)); }
+  .head-inner { padding: 18px 20px 16px; display: flex; align-items: center; gap: 14px; }
+  .logo { height: 48px; width: auto; flex: none; }
+  .brand .wordmark { font-size: 22px; font-weight: 900; letter-spacing: -.01em; color: var(--ph-dark); line-height: 1.1; }
+  .brand .division { font-size: 11px; font-weight: 700; letter-spacing: .22em; text-transform: uppercase;
+                     color: var(--ph-green); margin-top: 3px; }
+  .head-sub { padding: 0 20px 14px; }
+  .eyebrow { font-size: 11.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #6B7A70; }
+  .sub { margin-top: 3px; font-size: 15px; font-weight: 800; color: var(--ph-dark); }
+  main { flex: 1; padding: 18px 16px 8px; }
+  .stack > * + * { margin-top: 12px; }
+  .card { background: #fff; border: 1px solid var(--ph-line); border-radius: var(--radius);
+          box-shadow: var(--shadow); padding: 16px; }
+  .btn { display: block; width: 100%; padding: 17px 16px; font-size: 18px; font-weight: 800;
+         letter-spacing: .01em; border: 0; border-radius: 14px; cursor: pointer; font-family: inherit;
+         box-shadow: var(--shadow); transition: transform .04s ease; }
+  .btn:active { transform: translateY(1px); }
+  .btn:focus-visible { outline: 3px solid var(--ph-green); outline-offset: 2px; }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .btn-dark { background: var(--ph-dark); color: #fff; }
+  .btn-green { background: linear-gradient(135deg, var(--ph-green), #3C8443); color: #fff; }
+  .btn-red { background: var(--ph-out); color: #fff; }
+  .btn-ghost { background: #fff; color: var(--ph-dark); border: 1.5px solid var(--ph-line); box-shadow: none; }
+  label { display: block; }
+  .lab { display: block; font-size: 11.5px; font-weight: 700; letter-spacing: .1em;
+         text-transform: uppercase; margin-bottom: 6px; color: var(--ph-dark); }
+  input, select { width: 100%; border: 1.5px solid var(--ph-line); background: #fff; border-radius: 12px;
+                  padding: 15px 14px; font-size: 17px; font-family: inherit; color: var(--ph-ink); }
+  input:focus-visible, select:focus-visible { outline: 3px solid var(--ph-green); outline-offset: 1px;
+                  border-color: var(--ph-green); }
+  .banner { border: 1.5px solid var(--ph-err); background: #FBF0EC; border-radius: 12px;
+            padding: 12px 14px; font-weight: 700; color: var(--ph-err); }
+  .note { border: 1.5px solid var(--ph-line); background: var(--ph-soft); border-radius: 12px;
+          padding: 12px 14px; font-weight: 700; color: var(--ph-dark); }
+  .person { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+            border: 1px solid var(--ph-line); background: #fff; border-radius: var(--radius);
+            box-shadow: var(--shadow); padding: 13px 15px; cursor: pointer; font-family: inherit; }
+  .person:focus-visible { outline: 3px solid var(--ph-green); outline-offset: 2px; }
+  .avatar { flex: none; width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center;
+            justify-content: center; font-weight: 800; font-size: 17px; color: #fff;
+            background: linear-gradient(135deg, var(--ph-green), var(--ph-dark)); }
+  .person .nm { display: block; font-size: 17px; font-weight: 800; color: var(--ph-ink); }
+  .person .co { display: block; font-size: 13px; font-weight: 600; color: #6B7A70; }
+  .rules { background: #fff; border: 1px solid var(--ph-line); border-radius: var(--radius);
+           box-shadow: var(--shadow); padding: 14px 16px; }
+  .rules .lab { margin-bottom: 8px; }
+  .rules ul { list-style: none; }
+  .rules li { font-size: 14px; font-weight: 600; padding: 5px 0 5px 24px; position: relative; color: var(--ph-ink); }
+  .rules li::before { content: ''; position: absolute; left: 0; top: 9px; width: 12px; height: 12px;
+                      border-radius: 50%; background: var(--ph-green); }
+  .ackrow { display: flex; align-items: flex-start; gap: 12px; border: 1.5px solid var(--ph-green);
+            background: var(--ph-soft); border-radius: var(--radius); padding: 14px; cursor: pointer; }
+  .ackrow input { width: 26px; height: 26px; flex: none; margin-top: 1px; accent-color: var(--ph-dark); }
+  .ackrow span { font-size: 14.5px; font-weight: 700; color: var(--ph-dark); }
+  .done { text-align: center; padding-top: 36px; }
+  .check { width: 92px; height: 92px; margin: 0 auto; border-radius: 50%; display: flex;
+           align-items: center; justify-content: center; font-size: 44px; color: #fff;
+           background: linear-gradient(135deg, var(--ph-green), var(--ph-dark)); box-shadow: var(--shadow); }
+  .done p { font-size: 18px; font-weight: 800; margin: 18px 0 24px; color: var(--ph-dark); }
+  footer { padding: 10px 20px 22px; font-size: 11px; font-weight: 700; letter-spacing: .1em;
+           text-transform: uppercase; color: #8A988F; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="accent"></div>
+    <div class="head-inner">
+      <img class="logo" src="logo.png" alt="PruittHealth" onerror="this.style.display='none'">
+      <div class="brand">
+        <div class="wordmark">PruittHealth</div>
+        <div class="division">Construction Services</div>
+      </div>
+    </div>
+    <div class="head-sub">
+      <p class="eyebrow">All persons entering this site must sign in</p>
+      <p class="sub" id="subTitle">Select your jobsite</p>
+    </div>
+  </header>
+  <main id="main"></main>
+  <footer>PruittHealth Construction Services &middot; Jobsite sign in</footer>
+</div>
+
+<script>
+/* ===================== CONFIG ======================
+   Paste your Google Apps Script web app URL below.
+   See SETUP_GUIDE.md for how to deploy the script.   */
+const APP_URL = "https://script.google.com/macros/s/AKfycbxoieq4owWC_v-bZ5urp6bk2bcPhOrbbK8w1QL06Yt-oGqeKJtIdwSvlW__pl68YTYP/exec";
+
+const SITES = [
+  "Carrollton ALF / SNF",
+  "Augusta Canopy",
+  "Christian City ALF",
+  "Christian City SNF",
+  "Creekside Dialysis",
+  "Moncks Corner",
+  "Brookhaven",
+];
+
+const TRADES = [
+  "PruittHealth Employee","Electrical","Plumbing","HVAC","Fire Protection","Low Voltage","Drywall",
+  "Framing","Painting","Flooring","Millwork","Glazing","Masonry","Concrete",
+  "Roofing","Sitework","Demolition","General Labor","Delivery","Inspector","Vendor / Other",
+];
+
+/* Safety acknowledgment. Edit the rules anytime, and when you do,
+   bump SAFETY_VERSION so records show which wording was agreed to. */
+const SAFETY_VERSION = "v1 2026-06-12";
+const SAFETY_RULES = [
+  "I will wear required PPE at all times in work areas",
+  "I will stay within authorized work areas and respect all ICRA / infection control barriers",
+  "I will report all injuries, incidents, and hazards to the superintendent immediately",
+  "I will not operate equipment I am not trained and authorized to use",
+  "I am fit for duty and not impaired",
+];
+/* ================== END CONFIG ===================== */
+
+const main = document.getElementById('main');
+const subTitle = document.getElementById('subTitle');
+let site = null;
+
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const configured = () => APP_URL.startsWith('http');
+const initials = s => String(s).trim().split(/\s+/).slice(0, 2).map(w => w[0] || '').join('').toUpperCase();
+
+function render(html, sub) {
+  subTitle.textContent = sub;
+  main.innerHTML = html;
+}
+
+function clearBanners() {
+  main.querySelectorAll('.banner').forEach(el => el.remove());
+}
+
+function banner(msg) {
+  clearBanners();
+  const b = document.createElement('div');
+  b.className = 'banner';
+  b.textContent = msg;
+  main.prepend(b);
+}
+
+function viewSites() {
+  site = null;
+  render(`
+    <div class="stack">
+      <div class="card">
+        <label><span class="lab">Jobsite</span>
+          <select id="fSite">
+            <option value="">Select your jobsite&hellip;</option>
+            ${SITES.map(s => `<option>${esc(s)}</option>`).join('')}
+          </select></label>
+      </div>
+    </div>`, 'Select your jobsite');
+  if (!configured()) banner('Setup incomplete: the Apps Script URL has not been pasted into this file yet. See SETUP_GUIDE.md.');
+  document.getElementById('fSite').onchange = (e) => {
+    if (!e.target.value) return;
+    site = e.target.value;
+    viewAction();
+  };
+}
+
+function viewAction() {
+  render(`
+    <div class="stack">
+      <button class="btn btn-green" id="bIn">Sign in</button>
+      <button class="btn btn-red" id="bOut">Sign out</button>
+      <button class="btn btn-ghost" id="bBack">&#8592; Change site</button>
+    </div>`, site);
+  document.getElementById('bIn').onclick = viewSignIn;
+  document.getElementById('bOut').onclick = viewSignOut;
+  document.getElementById('bBack').onclick = viewSites;
+}
+
+function viewSignIn() {
+  render(`
+    <div class="stack">
+      <div class="card stack">
+        <label><span class="lab">Your name</span>
+          <input id="fName" autocomplete="name" placeholder="First and last name"></label>
+        <label><span class="lab">Trade</span>
+          <select id="fTrade"><option value="">Select trade&hellip;</option>
+            ${TRADES.map(t => `<option>${esc(t)}</option>`).join('')}</select></label>
+        <label><span class="lab">Company</span>
+          <input id="fCo" placeholder="Who you work for"></label>
+      </div>
+      <div class="rules">
+        <span class="lab">Site safety requirements</span>
+        <ul>${SAFETY_RULES.map(r => `<li>${esc(r)}</li>`).join('')}</ul>
+      </div>
+      <label class="ackrow">
+        <input type="checkbox" id="fAck">
+        <span>I have read and agree to the site safety requirements</span>
+      </label>
+      <button class="btn btn-green" id="bGo">Sign in now</button>
+      <button class="btn btn-ghost" id="bBack">&#8592; Back</button>
+    </div>`, site);
+  document.getElementById('bBack').onclick = viewAction;
+  const tradeSel = document.getElementById('fTrade');
+  const coInput = document.getElementById('fCo');
+  tradeSel.onchange = () => {
+    if (tradeSel.value === 'PruittHealth Employee') {
+      coInput.value = 'PruittHealth';
+      coInput.disabled = true;
+    } else {
+      if (coInput.value === 'PruittHealth') coInput.value = '';
+      coInput.disabled = false;
+    }
+  };
+  document.getElementById('bGo').onclick = async () => {
+    clearBanners();
+    const name = document.getElementById('fName').value.trim();
+    const co = document.getElementById('fCo').value.trim();
+    const trade = document.getElementById('fTrade').value;
+    if (!name && !co) { banner('Name and company are required.'); return; }
+    if (!name) { banner('Your name is required.'); return; }
+    if (!co) { banner('Company is required.'); return; }
+    if (!document.getElementById('fAck').checked) {
+      banner('You must read and agree to the site safety requirements to sign in.');
+      return;
+    }
+    await submit({ action: 'In', name, company: co, trade: trade || 'Not given', site,
+        ack: SAFETY_VERSION },
+      'You are signed in. Sign out at this same code when you leave.', 'bGo', 'Saving\u2026');
+  };
+}
+
+async function viewSignOut() {
+  render('<p class="note">Loading today\u2019s sign ins\u2026</p>', site);
+  let open;
+  try {
+    const u = APP_URL + (APP_URL.includes('?') ? '&' : '?') +
+      'site=' + encodeURIComponent(site);
+    const res = await fetch(u);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    open = await res.json();
+    if (!Array.isArray(open)) open = [];
+  } catch (e) {
+    render('', site);
+    banner('Could not load the sign in list (' + e.message + '). Check your signal and try again.');
+    const b = document.createElement('button');
+    b.className = 'btn btn-ghost'; b.textContent = '\u2190 Back'; b.onclick = viewAction;
+    main.appendChild(b);
+    return;
+  }
+  // the server returns only people currently on site today
+  render('<p class="lab">Tap your name to sign out</p><div class="stack" id="list"></div>', site);
+  const list = document.getElementById('list');
+  if (!open.length) {
+    list.innerHTML = '<p class="note">No one is currently signed in here today. If you signed in on paper, see the superintendent.</p>';
+  }
+  open.forEach(r => {
+    const b = document.createElement('button');
+    b.className = 'person';
+    b.innerHTML = `<span class="avatar">${esc(initials(r.Name))}</span>
+      <span><span class="nm">${esc(r.Name)}</span><span class="co">${esc(r.Company)} \u00b7 in ${esc((r.Timestamp || '').slice(11, 16))}</span></span>`;
+    b.onclick = async () => {
+      b.disabled = true;
+      await submit({ action: 'Out', name: r.Name, company: r.Company, trade: r.Trade || 'Not given', site },
+        'You are signed out. Get home safe.', null, null);
+      b.disabled = false;
+    };
+    list.appendChild(b);
+  });
+  const back = document.createElement('button');
+  back.className = 'btn btn-ghost'; back.textContent = '\u2190 Back'; back.onclick = viewAction;
+  list.appendChild(back);
+}
+
+async function submit(payload, doneText, btnId, busyText) {
+  const btn = btnId ? document.getElementById(btnId) : null;
+  if (btn) { btn.disabled = true; btn.textContent = busyText; }
+  try {
+    // text/plain keeps the request "simple" so the browser skips the
+    // CORS preflight that Apps Script cannot answer.
+    const res = await fetch(APP_URL, { method: 'POST',
+      headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(payload) });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const out = await res.json().catch(() => ({ ok: true }));
+    if (out && out.ok === false) throw new Error(out.error || 'save rejected');
+    viewDone(doneText);
+  } catch (e) {
+    banner('Could not save (' + e.message + '). Check your signal and try again.');
+    if (btn) { btn.disabled = false; btn.textContent = btnId === 'bGo' ? 'Sign in now' : btn.textContent; }
+  }
+}
+
+function viewDone(msg) {
+  render(`
+    <div class="done">
+      <div class="check">\u2714</div>
+      <p>${esc(msg)}</p>
+      <button class="btn btn-dark" id="bDone">Done</button>
+    </div>`, site || '');
+  document.getElementById('bDone').onclick = viewSites;
+}
+
+viewSites();
+</script>
+</body>
+</html>
