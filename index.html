@@ -156,9 +156,11 @@ const SAFETY_RULES = [
   "I am fit for duty and not impaired",
 ];
 
-/* Photo compression settings. 1600px longest side + JPEG q0.75 keeps most
-   delivery photos under 500 KB while still legible. */
-const PHOTO_MAX_DIM = 1600;
+/* Photo compression settings. 1200px longest side + JPEG q0.75 keeps most
+   delivery photos under 400 KB while staying legible for pallet labels.
+   Lower than 1200 starts making small print unreadable; higher pushes
+   older phones over their per tab memory budget when decoding. */
+const PHOTO_MAX_DIM = 1200;
 const PHOTO_JPEG_QUALITY = 0.75;
 /* ================== END CONFIG ===================== */
 
@@ -220,28 +222,65 @@ function viewAction() {
 }
 
 /* Turn a File (from a camera capture) into a compressed JPEG data URL.
-   Runs entirely in the browser so nothing hits the server until submit. */
+   Runs entirely in the browser so nothing hits the server until submit.
+
+   Modern phone cameras produce 12 to 48 megapixel photos. Reading the raw
+   file as a data URL and decoding the full resolution into an Image blows
+   past iOS Safari's per tab memory limit and shows "unable to complete
+   because of low memory". Two tricks avoid it:
+
+     1. createImageBitmap(file, { resizeWidth, resizeHeight, resizeQuality })
+        decodes at a reduced size in one step. No giant intermediate.
+     2. If createImageBitmap is missing or refuses (rare, older browsers),
+        fall back to URL.createObjectURL on the raw file, which is much
+        cheaper than a base64 data URL string. */
 function compressPhoto(file, maxDim, quality) {
+  // Fast path: createImageBitmap with resize options. iOS 15+, Android Chrome.
+  if (typeof createImageBitmap === 'function') {
+    // First peek at the natural size cheaply so we can pick the right target.
+    return createImageBitmap(file).then(peek => {
+      let w = peek.width, h = peek.height;
+      peek.close && peek.close();
+      const scale = Math.min(1, maxDim / Math.max(w, h));
+      const targetW = Math.max(1, Math.round(w * scale));
+      const targetH = Math.max(1, Math.round(h * scale));
+      return createImageBitmap(file, {
+        resizeWidth: targetW,
+        resizeHeight: targetH,
+        resizeQuality: 'high'
+      });
+    }).then(bmp => {
+      const canvas = document.createElement('canvas');
+      canvas.width = bmp.width; canvas.height = bmp.height;
+      canvas.getContext('2d').drawImage(bmp, 0, 0);
+      bmp.close && bmp.close();
+      return canvas.toDataURL('image/jpeg', quality);
+    }).catch(() => compressPhotoFallback_(file, maxDim, quality));
+  }
+  return compressPhotoFallback_(file, maxDim, quality);
+}
+
+function compressPhotoFallback_(file, maxDim, quality) {
   return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = ev => {
-      const img = new Image();
-      img.onload = () => {
-        let w = img.naturalWidth, h = img.naturalHeight;
-        if (Math.max(w, h) > maxDim) {
-          if (w >= h) { h = Math.round(h * maxDim / w); w = maxDim; }
-          else        { w = Math.round(w * maxDim / h); h = maxDim; }
-        }
-        const canvas = document.createElement('canvas');
-        canvas.width = w; canvas.height = h;
-        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-        resolve(canvas.toDataURL('image/jpeg', quality));
-      };
-      img.onerror = () => reject(new Error('image decode failed'));
-      img.src = ev.target.result;
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      let w = img.naturalWidth, h = img.naturalHeight;
+      if (Math.max(w, h) > maxDim) {
+        if (w >= h) { h = Math.round(h * maxDim / w); w = maxDim; }
+        else        { w = Math.round(w * maxDim / h); h = maxDim; }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL('image/jpeg', quality));
     };
-    reader.onerror = () => reject(new Error('file read failed'));
-    reader.readAsDataURL(file);
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('image decode failed'));
+    };
+    img.src = url;
   });
 }
 
