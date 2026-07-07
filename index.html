@@ -157,13 +157,14 @@ const SAFETY_RULES = [
   "I am fit for duty and not impaired",
 ];
 
-/* Photo compression settings. 1000px longest side + JPEG q0.75 keeps most
-   delivery photos under 350 KB while staying legible for pallet labels and
-   printed BOL text. Two photos per delivery means memory is tight on older
-   phones, so we err smaller and store photos as Blobs (not base64 strings)
-   throughout capture. Base64 conversion happens only at POST time. */
-const PHOTO_MAX_DIM = 1000;
-const PHOTO_JPEG_QUALITY = 0.75;
+/* Photo compression settings. 900px longest side + JPEG q0.72 keeps most
+   delivery photos under 250 KB while staying legible. Modern camera photos
+   are 12-50 MP; decoding them uses 30-100 MB per photo. On two-photo flows
+   this can OOM on constrained devices. We use a single <img>+canvas decode
+   (not createImageBitmap, which some browsers implement as a full-res decode
+   first) and clear all intermediates aggressively. */
+const PHOTO_MAX_DIM = 900;
+const PHOTO_JPEG_QUALITY = 0.72;
 /* ================== END CONFIG ===================== */
 
 const main = document.getElementById('main');
@@ -224,70 +225,52 @@ function viewAction() {
 }
 
 /* Turn a File (from a camera capture) into a compressed JPEG Blob.
-   Returns a Blob (not a base64 data URL string) to save memory on phones
-   holding TWO delivery photos at once. Preview uses URL.createObjectURL on
-   the blob. Base64 conversion happens only at POST time. */
-function compressPhoto(file, maxDim, quality) {
-  if (typeof createImageBitmap === 'function') {
-    return createImageBitmap(file).then(peek => {
-      let w = peek.width, h = peek.height;
-      peek.close && peek.close();
-      const scale = Math.min(1, maxDim / Math.max(w, h));
-      const targetW = Math.max(1, Math.round(w * scale));
-      const targetH = Math.max(1, Math.round(h * scale));
-      return createImageBitmap(file, {
-        resizeWidth: targetW,
-        resizeHeight: targetH,
-        resizeQuality: 'high'
-      });
-    }).then(bmp => canvasToJpegBlob_(bmp, quality))
-      .catch(() => compressPhotoFallback_(file, maxDim, quality));
-  }
-  return compressPhotoFallback_(file, maxDim, quality);
-}
-
-function canvasToJpegBlob_(bmp, quality) {
-  return new Promise((resolve, reject) => {
-    const canvas = document.createElement('canvas');
-    canvas.width = bmp.width; canvas.height = bmp.height;
-    canvas.getContext('2d').drawImage(bmp, 0, 0);
-    bmp.close && bmp.close();
-    canvas.toBlob(blob => {
-      // Explicitly zero the canvas so the backing store can be freed.
-      canvas.width = 0; canvas.height = 0;
-      if (blob) resolve(blob);
-      else      reject(new Error('encode failed'));
-    }, 'image/jpeg', quality);
-  });
-}
-
-function compressPhotoFallback_(file, maxDim, quality) {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => {
-      let w = img.naturalWidth, h = img.naturalHeight;
-      if (Math.max(w, h) > maxDim) {
-        if (w >= h) { h = Math.round(h * maxDim / w); w = maxDim; }
-        else        { w = Math.round(w * maxDim / h); h = maxDim; }
-      }
-      const canvas = document.createElement('canvas');
-      canvas.width = w; canvas.height = h;
-      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-      img.src = '';
-      URL.revokeObjectURL(url);
-      canvas.toBlob(blob => {
-        canvas.width = 0; canvas.height = 0;
-        if (blob) resolve(blob);
-        else      reject(new Error('encode failed'));
-      }, 'image/jpeg', quality);
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error('image decode failed'));
-    };
+   Single decode via <img> + one canvas at target size, no createImageBitmap.
+   createImageBitmap is inconsistent across browsers: some implementations
+   decode at full resolution before honoring resizeWidth/resizeHeight, which
+   defeats the purpose and pushes multi-MP camera photos over the tab memory
+   ceiling. The img + canvas path is one decode. */
+async function compressPhoto(file, maxDim, quality) {
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  try {
     img.src = url;
-  });
+    if (typeof img.decode === 'function') {
+      await img.decode();
+    } else {
+      await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
+    }
+    let w = img.naturalWidth, h = img.naturalHeight;
+    if (!w || !h) throw new Error('bad image dimensions');
+    if (Math.max(w, h) > maxDim) {
+      if (w >= h) { h = Math.round(h * maxDim / w); w = maxDim; }
+      else        { w = Math.round(w * maxDim / h); h = maxDim; }
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, w, h);
+    // Release the img element's decoded bitmap before creating the JPEG blob.
+    img.src = '';
+    URL.revokeObjectURL(url);
+    const blob = await new Promise((res, rej) => {
+      canvas.toBlob(b => b ? res(b) : rej(new Error('encode failed')),
+                    'image/jpeg', quality);
+    });
+    // Zero the canvas so the backing store frees quickly instead of waiting for GC.
+    canvas.width = 0; canvas.height = 0;
+    return blob;
+  } catch (e) {
+    try { img.src = ''; URL.revokeObjectURL(url); } catch (_) {}
+    throw e;
+  }
+}
+
+/* Yield to the browser so it can run GC / paint between operations. Useful
+   between the first and second photo capture on constrained Android devices
+   where memory from the first photo is still being reclaimed. */
+function yieldToBrowser_() {
+  return new Promise(res => setTimeout(res, 60));
 }
 
 /* Blob → base64 data URL. Runs only once per photo, at submit time. */
@@ -304,7 +287,8 @@ function blobToDataUrl_(blob) {
    right module level slot ('bol' or 'mat'), and preview via an object URL. */
 function wirePhotoInput_(inputId, previewId, statusId, btnLabelId,
                          retakeLabel, slot) {
-  document.getElementById(inputId).onchange = async (e) => {
+  const input = document.getElementById(inputId);
+  input.onchange = async (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
     const stat = document.getElementById(statusId);
@@ -313,8 +297,17 @@ function wirePhotoInput_(inputId, previewId, statusId, btnLabelId,
     stat.className = 'del-hint';
     stat.textContent = 'Processing photo…';
     stat.style.display = '';
+
+    // Give the browser a beat to reclaim memory from the camera intent before
+    // we start decoding. Meaningful on Android with a huge camera capture.
+    await yieldToBrowser_();
+
     try {
       const blob = await compressPhoto(file, PHOTO_MAX_DIM, PHOTO_JPEG_QUALITY);
+      // Drop the File reference the DOM was holding; frees the raw camera
+      // capture memory. Must happen AFTER compressPhoto reads it.
+      input.value = '';
+
       // Free the prior object URL before making a new one.
       if (slot === 'bol') {
         if (bolPreviewUrl) URL.revokeObjectURL(bolPreviewUrl);
@@ -333,10 +326,11 @@ function wirePhotoInput_(inputId, previewId, statusId, btnLabelId,
       stat.textContent = 'Photo ready (' + approxKb + ' KB). Tap again to retake.';
       btnLbl.textContent = retakeLabel;
     } catch (err) {
+      input.value = '';
       if (slot === 'bol') { bolPhotoBlob = null; }
       else                { materialPhotoBlob = null; }
       stat.className = 'del-hint err';
-      stat.textContent = 'Could not process photo. Try again.';
+      stat.textContent = 'Could not process photo. Try again. If this keeps happening, close other apps or Chrome tabs.';
     }
   };
 }
@@ -566,14 +560,26 @@ async function submit(payload, doneText, btnId, busyText) {
   const btn = btnId ? document.getElementById(btnId) : null;
   if (btn) { btn.disabled = true; btn.textContent = busyText; }
   try {
-    // text/plain keeps the request "simple" so the browser skips the
-    // CORS preflight that Apps Script cannot answer.
-    const res = await fetch(APP_URL, { method: 'POST',
-      headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(payload) });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const out = await res.json().catch(() => ({ ok: true }));
-    if (out && out.ok === false) throw new Error(out.error || 'save rejected');
-    viewDone(doneText, out);
+    // Two things going on here:
+    //  1. text/plain keeps the request "simple" so the browser skips the
+    //     CORS preflight that Apps Script cannot answer.
+    //  2. mode: 'no-cors' sidesteps a known Apps Script quirk where the /exec
+    //     endpoint issues a cross origin redirect (to script.googleusercontent.com)
+    //     that some mobile browsers reject with HTTP 404, even when the
+    //     server side has already saved the row. In no-cors mode the response
+    //     is opaque (we cannot read the JSON), so we treat "fetch resolved
+    //     without throwing" as success. Server truth lives in the Sheet and
+    //     the notification email; the phone just needs to know its POST left.
+    await fetch(APP_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify(payload)
+    });
+    // No response body available in no-cors, so viewDone gets an empty object
+    // and simply omits the "Detected PO" flash. The PO still appears in the
+    // notification email and the Sheet.
+    viewDone(doneText, {});
   } catch (e) {
     banner('Could not save (' + e.message + '). Check your signal and try again.');
     if (btn) { btn.disabled = false; btn.textContent = btnId === 'bGo' ? 'Sign in now' : btn.textContent; }
