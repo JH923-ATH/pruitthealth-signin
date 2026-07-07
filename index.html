@@ -100,6 +100,10 @@
   .del-hint.err { color: var(--ph-err); }
   .photo-preview { display: none; margin-top: 10px; max-width: 100%; border-radius: 12px;
                    border: 1px solid var(--ph-line); }
+  .photo-remove { display: none; margin-top: 8px; font-size: 13px; font-weight: 700;
+                  color: var(--ph-err); background: none; border: 0; padding: 4px 0;
+                  cursor: pointer; font-family: inherit; text-decoration: underline; }
+  .photo-remove:focus-visible { outline: 2px solid var(--ph-err); outline-offset: 2px; }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 </head>
@@ -284,8 +288,9 @@ function blobToDataUrl_(blob) {
 }
 
 /* Attach a photo capture input. On file pick, compress to a Blob, store in the
-   right module level slot ('bol' or 'mat'), and preview via an object URL. */
-function wirePhotoInput_(inputId, previewId, statusId, btnLabelId,
+   right module level slot ('bol' or 'mat'), preview via an object URL, and
+   reveal the Remove button. */
+function wirePhotoInput_(inputId, previewId, statusId, btnLabelId, removeBtnId,
                          retakeLabel, slot) {
   const input = document.getElementById(inputId);
   input.onchange = async (e) => {
@@ -294,6 +299,7 @@ function wirePhotoInput_(inputId, previewId, statusId, btnLabelId,
     const stat = document.getElementById(statusId);
     const prev = document.getElementById(previewId);
     const btnLbl = document.getElementById(btnLabelId);
+    const removeBtn = document.getElementById(removeBtnId);
     stat.className = 'del-hint';
     stat.textContent = 'Processing photo…';
     stat.style.display = '';
@@ -321,9 +327,10 @@ function wirePhotoInput_(inputId, previewId, statusId, btnLabelId,
         prev.src = materialPreviewUrl;
       }
       prev.style.display = 'block';
+      removeBtn.style.display = 'inline-block';
       const approxKb = Math.round(blob.size / 1024);
       stat.className = 'del-hint ok';
-      stat.textContent = 'Photo ready (' + approxKb + ' KB). Tap again to retake.';
+      stat.textContent = 'Photo ready (' + approxKb + ' KB). Tap the button to retake or Remove to drop it.';
       btnLbl.textContent = retakeLabel;
     } catch (err) {
       input.value = '';
@@ -335,14 +342,35 @@ function wirePhotoInput_(inputId, previewId, statusId, btnLabelId,
   };
 }
 
+/* Attach the Remove button for a photo slot. Wipes the stored Blob, revokes
+   the preview object URL, and resets the UI back to "not taken yet". */
+function wireRemoveButton_(btnId, slot, idleLabel) {
+  const btn = document.getElementById(btnId);
+  if (!btn) return;
+  btn.onclick = () => {
+    if (slot === 'bol') {
+      if (bolPreviewUrl) URL.revokeObjectURL(bolPreviewUrl);
+      bolPhotoBlob = null;
+      bolPreviewUrl = null;
+    } else {
+      if (materialPreviewUrl) URL.revokeObjectURL(materialPreviewUrl);
+      materialPhotoBlob = null;
+      materialPreviewUrl = null;
+    }
+    resetPhotoUi_(slot, idleLabel);
+  };
+}
+
 /* Reset a photo capture UI back to its "not taken yet" state. */
 function resetPhotoUi_(prefix, idleLabel) {
   const prev = document.getElementById(prefix + 'Preview');
   const stat = document.getElementById(prefix + 'PhotoStatus');
   const btnLbl = document.getElementById(prefix + 'PhotoBtnLabel');
-  if (prev)   { prev.style.display = 'none'; prev.src = ''; }
-  if (stat)   { stat.style.display = 'none'; stat.textContent = ''; }
-  if (btnLbl) { btnLbl.textContent = idleLabel; }
+  const removeBtn = document.getElementById(prefix + 'PhotoRemove');
+  if (prev)      { prev.style.display = 'none'; prev.src = ''; }
+  if (stat)      { stat.style.display = 'none'; stat.textContent = ''; }
+  if (btnLbl)    { btnLbl.textContent = idleLabel; }
+  if (removeBtn) { removeBtn.style.display = 'none'; }
 }
 
 /* Drop all photo state, freeing any live object URLs. */
@@ -382,15 +410,16 @@ function viewSignIn() {
       </div>
 
       <div class="card stack" id="dCard" style="display:none">
-        <div class="del-hint">Deliveries need two photos: the bill of lading and the material itself. We will read the BOL automatically.</div>
+        <div class="del-hint">The material photo is required. If your phone can't handle both, or the BOL is not scannable, skip the BOL and type the details manually below.</div>
 
         <div>
-          <span class="lab">1. Photo of the bill of lading *</span>
+          <span class="lab">1. Bill of lading (recommended)</span>
           <label class="btn btn-dark" style="text-align:center;margin:0">
             <span id="bolPhotoBtnLabel">Scan bill of lading</span>
             <input id="fBolPhoto" type="file" accept="image/*" capture="environment" style="display:none">
           </label>
           <img id="bolPreview" class="photo-preview" alt="">
+          <button type="button" id="bolPhotoRemove" class="photo-remove">Remove photo</button>
           <div id="bolPhotoStatus" class="del-hint" style="margin-top:8px;display:none"></div>
         </div>
 
@@ -401,6 +430,7 @@ function viewSignIn() {
             <input id="fMatPhoto" type="file" accept="image/*" capture="environment" style="display:none">
           </label>
           <img id="matPreview" class="photo-preview" alt="">
+          <button type="button" id="matPhotoRemove" class="photo-remove">Remove photo</button>
           <div id="matPhotoStatus" class="del-hint" style="margin-top:8px;display:none"></div>
         </div>
 
@@ -452,10 +482,13 @@ function viewSignIn() {
   };
 
   wirePhotoInput_('fBolPhoto', 'bolPreview', 'bolPhotoStatus', 'bolPhotoBtnLabel',
-    'Retake bill of lading', 'bol');
+    'bolPhotoRemove', 'Retake bill of lading', 'bol');
 
   wirePhotoInput_('fMatPhoto', 'matPreview', 'matPhotoStatus', 'matPhotoBtnLabel',
-    'Retake material photo', 'mat');
+    'matPhotoRemove', 'Retake material photo', 'mat');
+
+  wireRemoveButton_('bolPhotoRemove', 'bol', 'Scan bill of lading');
+  wireRemoveButton_('matPhotoRemove', 'mat', 'Photo of the material');
 
   document.getElementById('bGo').onclick = async () => {
     clearBanners();
@@ -467,15 +500,15 @@ function viewSignIn() {
     if (!name)         { banner('Your name is required.'); return; }
     if (!co)           { banner('Company is required.'); return; }
 
-    // Delivery required extras. Material text is now optional (OCR fills it
-    // from the BOL when possible). Both photos are required.
+    // Delivery required extras. Only the material photo is required. BOL
+    // photo is recommended but optional; if skipped, the driver can type
+    // material and PO manually.
     let material = '', po = '', forTrade = '', notes = '';
     if (trade === 'Delivery') {
       material = document.getElementById('fMat').value.trim();
       po       = document.getElementById('fPo').value.trim();
       forTrade = document.getElementById('fFor').value;
       notes    = document.getElementById('fNotes').value.trim();
-      if (!bolPhotoBlob)      { banner('A photo of the bill of lading is required.'); return; }
       if (!materialPhotoBlob) { banner('A photo of the material is required.'); return; }
     }
 
@@ -494,13 +527,15 @@ function viewSignIn() {
       payload.forTrade = forTrade;
       payload.notes = notes;
       // Convert Blobs to base64 only at submit time. Doing this earlier
-      // (during capture) is what caused the "unable to complete because of
-      // low memory" errors on older iPhones.
+      // (during capture) is what caused the low-memory errors on iPhones.
       const btn = document.getElementById('bGo');
       btn.disabled = true; btn.textContent = 'Preparing photos…';
       try {
-        payload.bolPhotoDataUrl      = await blobToDataUrl_(bolPhotoBlob);
         payload.materialPhotoDataUrl = await blobToDataUrl_(materialPhotoBlob);
+        // BOL photo is optional now. Only include it if the driver took one.
+        if (bolPhotoBlob) {
+          payload.bolPhotoDataUrl = await blobToDataUrl_(bolPhotoBlob);
+        }
       } catch (err) {
         btn.disabled = false; btn.textContent = 'Sign in now';
         banner('Could not prepare photos. Try again.');
@@ -508,9 +543,12 @@ function viewSignIn() {
       }
     }
 
+    const busyText = (trade === 'Delivery' && bolPhotoBlob)
+      ? 'Saving and scanning…'
+      : 'Saving…';
     await submit(payload,
       'You are signed in. Sign out at this same code when you leave.',
-      'bGo', 'Saving and scanning…');
+      'bGo', busyText);
   };
 }
 
