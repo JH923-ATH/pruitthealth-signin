@@ -57,9 +57,10 @@
   label { display: block; }
   .lab { display: block; font-size: 11.5px; font-weight: 700; letter-spacing: .1em;
          text-transform: uppercase; margin-bottom: 6px; color: var(--ph-dark); }
-  input, select { width: 100%; border: 1.5px solid var(--ph-line); background: #fff; border-radius: 12px;
+  input, select, textarea { width: 100%; border: 1.5px solid var(--ph-line); background: #fff; border-radius: 12px;
                   padding: 15px 14px; font-size: 17px; font-family: inherit; color: var(--ph-ink); }
-  input:focus-visible, select:focus-visible { outline: 3px solid var(--ph-green); outline-offset: 1px;
+  textarea { resize: vertical; min-height: 68px; }
+  input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--ph-green); outline-offset: 1px;
                   border-color: var(--ph-green); }
   .banner { border: 1.5px solid var(--ph-err); background: #FBF0EC; border-radius: 12px;
             padding: 12px 14px; font-weight: 700; color: var(--ph-err); }
@@ -92,6 +93,13 @@
   .done p { font-size: 18px; font-weight: 800; margin: 18px 0 24px; color: var(--ph-dark); }
   footer { padding: 10px 20px 22px; font-size: 11px; font-weight: 700; letter-spacing: .1em;
            text-transform: uppercase; color: #8A988F; }
+
+  /* Delivery details section */
+  .del-hint { font-size: 13px; font-weight: 600; color: var(--ph-out); line-height: 1.35; }
+  .del-hint.ok  { color: var(--ph-green); }
+  .del-hint.err { color: var(--ph-err); }
+  .photo-preview { display: none; margin-top: 10px; max-width: 100%; border-radius: 12px;
+                   border: 1px solid var(--ph-line); }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 </head>
@@ -147,6 +155,11 @@ const SAFETY_RULES = [
   "I will not operate equipment I am not trained and authorized to use",
   "I am fit for duty and not impaired",
 ];
+
+/* Photo compression settings. 1600px longest side + JPEG q0.75 keeps most
+   delivery photos under 500 KB while still legible. */
+const PHOTO_MAX_DIM = 1600;
+const PHOTO_JPEG_QUALITY = 0.75;
 /* ================== END CONFIG ===================== */
 
 const main = document.getElementById('main');
@@ -206,7 +219,41 @@ function viewAction() {
   document.getElementById('bBack').onclick = viewSites;
 }
 
+/* Turn a File (from a camera capture) into a compressed JPEG data URL.
+   Runs entirely in the browser so nothing hits the server until submit. */
+function compressPhoto(file, maxDim, quality) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const img = new Image();
+      img.onload = () => {
+        let w = img.naturalWidth, h = img.naturalHeight;
+        if (Math.max(w, h) > maxDim) {
+          if (w >= h) { h = Math.round(h * maxDim / w); w = maxDim; }
+          else        { w = Math.round(w * maxDim / h); h = maxDim; }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = () => reject(new Error('image decode failed'));
+      img.src = ev.target.result;
+    };
+    reader.onerror = () => reject(new Error('file read failed'));
+    reader.readAsDataURL(file);
+  });
+}
+
+/* Delivery drivers get an extra card with material, PO, for, notes, and a
+   required camera capture. The `capture="environment"` attribute asks the
+   browser to open the rear camera. Some older browsers still fall back to a
+   file picker; that is out of our control from HTML alone. */
+const DELIVERY_FOR_OPTIONS = TRADES.filter(t => t !== 'Delivery' && t !== 'Vendor / Other');
+let deliveryPhotoDataUrl = null;   // set when the user takes a photo
+
 function viewSignIn() {
+  deliveryPhotoDataUrl = null;
   render(`
     <div class="stack">
       <div class="card stack">
@@ -218,6 +265,29 @@ function viewSignIn() {
         <label><span class="lab">Company</span>
           <input id="fCo" placeholder="Who you work for"></label>
       </div>
+
+      <div class="card stack" id="dCard" style="display:none">
+        <div class="del-hint">Deliveries need a few extra details and a photo of the load.</div>
+        <label><span class="lab">Material delivered *</span>
+          <input id="fMat" placeholder="e.g. 20 sheets 5/8 drywall"></label>
+        <label><span class="lab">PO or ticket #</span>
+          <input id="fPo" placeholder="Optional"></label>
+        <label><span class="lab">For (trade or department)</span>
+          <select id="fFor"><option value="">Optional&hellip;</option>
+            ${DELIVERY_FOR_OPTIONS.map(t => `<option>${esc(t)}</option>`).join('')}</select></label>
+        <label><span class="lab">Notes</span>
+          <textarea id="fNotes" rows="2" placeholder="Optional"></textarea></label>
+        <div>
+          <span class="lab">Photo of the delivery *</span>
+          <label class="btn btn-dark" style="text-align:center;margin:0">
+            <span id="dPhotoBtnLabel">Take delivery photo</span>
+            <input id="fPhoto" type="file" accept="image/*" capture="environment" style="display:none">
+          </label>
+          <img id="dPreview" class="photo-preview" alt="">
+          <div id="dPhotoStatus" class="del-hint" style="margin-top:8px;display:none"></div>
+        </div>
+      </div>
+
       <div class="rules">
         <span class="lab">Site safety requirements</span>
         <ul>${SAFETY_RULES.map(r => `<li>${esc(r)}</li>`).join('')}</ul>
@@ -232,7 +302,10 @@ function viewSignIn() {
   document.getElementById('bBack').onclick = viewAction;
   const tradeSel = document.getElementById('fTrade');
   const coInput = document.getElementById('fCo');
+  const dCard = document.getElementById('dCard');
+
   tradeSel.onchange = () => {
+    // Company auto fill for PruittHealth employees
     if (tradeSel.value === 'PruittHealth Employee') {
       coInput.value = 'PruittHealth';
       coInput.disabled = true;
@@ -240,27 +313,95 @@ function viewSignIn() {
       if (coInput.value === 'PruittHealth') coInput.value = '';
       coInput.disabled = false;
     }
+    // Show delivery card only when Trade = Delivery
+    if (tradeSel.value === 'Delivery') {
+      dCard.style.display = '';
+    } else {
+      dCard.style.display = 'none';
+      // Clear photo state if user switched away
+      deliveryPhotoDataUrl = null;
+      const prev = document.getElementById('dPreview');
+      const stat = document.getElementById('dPhotoStatus');
+      if (prev) { prev.style.display = 'none'; prev.src = ''; }
+      if (stat) { stat.style.display = 'none'; stat.textContent = ''; }
+      const btnLbl = document.getElementById('dPhotoBtnLabel');
+      if (btnLbl) btnLbl.textContent = 'Take delivery photo';
+    }
   };
+
+  document.getElementById('fPhoto').onchange = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const stat = document.getElementById('dPhotoStatus');
+    const prev = document.getElementById('dPreview');
+    const btnLbl = document.getElementById('dPhotoBtnLabel');
+    stat.className = 'del-hint';
+    stat.textContent = 'Processing photo…';
+    stat.style.display = '';
+    try {
+      const dataUrl = await compressPhoto(file, PHOTO_MAX_DIM, PHOTO_JPEG_QUALITY);
+      deliveryPhotoDataUrl = dataUrl;
+      prev.src = dataUrl;
+      prev.style.display = 'block';
+      // Approximate size after base64 overhead is 3/4 the string length.
+      const approxKb = Math.round((dataUrl.length * 3 / 4) / 1024);
+      stat.className = 'del-hint ok';
+      stat.textContent = 'Photo ready (' + approxKb + ' KB). Tap again to retake.';
+      btnLbl.textContent = 'Retake delivery photo';
+    } catch (err) {
+      deliveryPhotoDataUrl = null;
+      stat.className = 'del-hint err';
+      stat.textContent = 'Could not process photo. Try again.';
+    }
+  };
+
   document.getElementById('bGo').onclick = async () => {
     clearBanners();
-    const name = document.getElementById('fName').value.trim();
-    const co = document.getElementById('fCo').value.trim();
+    const name  = document.getElementById('fName').value.trim();
+    const co    = document.getElementById('fCo').value.trim();
     const trade = document.getElementById('fTrade').value;
+
     if (!name && !co) { banner('Name and company are required.'); return; }
-    if (!name) { banner('Your name is required.'); return; }
-    if (!co) { banner('Company is required.'); return; }
+    if (!name)         { banner('Your name is required.'); return; }
+    if (!co)           { banner('Company is required.'); return; }
+
+    // Delivery required extras
+    let material = '', po = '', forTrade = '', notes = '', photoDataUrl = null;
+    if (trade === 'Delivery') {
+      material = document.getElementById('fMat').value.trim();
+      po       = document.getElementById('fPo').value.trim();
+      forTrade = document.getElementById('fFor').value;
+      notes    = document.getElementById('fNotes').value.trim();
+      if (!material) { banner('Please enter what was delivered.'); return; }
+      if (!deliveryPhotoDataUrl) { banner('A photo of the delivery is required.'); return; }
+      photoDataUrl = deliveryPhotoDataUrl;
+    }
+
     if (!document.getElementById('fAck').checked) {
       banner('You must read and agree to the site safety requirements to sign in.');
       return;
     }
-    await submit({ action: 'In', name, company: co, trade: trade || 'Not given', site,
-        ack: SAFETY_VERSION },
-      'You are signed in. Sign out at this same code when you leave.', 'bGo', 'Saving\u2026');
+
+    const payload = {
+      action: 'In', name, company: co, trade: trade || 'Not given', site,
+      ack: SAFETY_VERSION
+    };
+    if (trade === 'Delivery') {
+      payload.material = material;
+      payload.po = po;
+      payload.forTrade = forTrade;
+      payload.notes = notes;
+      payload.photoDataUrl = photoDataUrl;
+    }
+
+    await submit(payload,
+      'You are signed in. Sign out at this same code when you leave.',
+      'bGo', 'Saving…');
   };
 }
 
 async function viewSignOut() {
-  render('<p class="note">Loading today\u2019s sign ins\u2026</p>', site);
+  render('<p class="note">Loading today’s sign ins…</p>', site);
   let open;
   try {
     const u = APP_URL + (APP_URL.includes('?') ? '&' : '?') +
@@ -273,7 +414,7 @@ async function viewSignOut() {
     render('', site);
     banner('Could not load the sign in list (' + e.message + '). Check your signal and try again.');
     const b = document.createElement('button');
-    b.className = 'btn btn-ghost'; b.textContent = '\u2190 Back'; b.onclick = viewAction;
+    b.className = 'btn btn-ghost'; b.textContent = '← Back'; b.onclick = viewAction;
     main.appendChild(b);
     return;
   }
@@ -287,7 +428,7 @@ async function viewSignOut() {
     const b = document.createElement('button');
     b.className = 'person';
     b.innerHTML = `<span class="avatar">${esc(initials(r.Name))}</span>
-      <span><span class="nm">${esc(r.Name)}</span><span class="co">${esc(r.Company)} \u00b7 in ${esc((r.Timestamp || '').slice(11, 16))}</span></span>`;
+      <span><span class="nm">${esc(r.Name)}</span><span class="co">${esc(r.Company)} · in ${esc((r.Timestamp || '').slice(11, 16))}</span></span>`;
     b.onclick = async () => {
       b.disabled = true;
       await submit({ action: 'Out', name: r.Name, company: r.Company, trade: r.Trade || 'Not given', site },
@@ -297,7 +438,7 @@ async function viewSignOut() {
     list.appendChild(b);
   });
   const back = document.createElement('button');
-  back.className = 'btn btn-ghost'; back.textContent = '\u2190 Back'; back.onclick = viewAction;
+  back.className = 'btn btn-ghost'; back.textContent = '← Back'; back.onclick = viewAction;
   list.appendChild(back);
 }
 
@@ -322,7 +463,7 @@ async function submit(payload, doneText, btnId, busyText) {
 function viewDone(msg) {
   render(`
     <div class="done">
-      <div class="check">\u2714</div>
+      <div class="check">✔</div>
       <p>${esc(msg)}</p>
       <button class="btn btn-dark" id="bDone">Done</button>
     </div>`, site || '');
