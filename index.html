@@ -285,15 +285,60 @@ function compressPhotoFallback_(file, maxDim, quality) {
   });
 }
 
-/* Delivery drivers get an extra card with material, PO, for, notes, and a
-   required camera capture. The `capture="environment"` attribute asks the
-   browser to open the rear camera. Some older browsers still fall back to a
-   file picker; that is out of our control from HTML alone. */
+/* Attach a photo capture input to its preview + status + button label.
+   Runs the file through compressPhoto, updates the UI, and stores the resulting
+   data URL via setUrl. On failure, calls clearUrl. */
+function wirePhotoInput_(inputId, previewId, statusId, btnLabelId,
+                         idleLabel, retakeLabel, setUrl, clearUrl) {
+  document.getElementById(inputId).onchange = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const stat = document.getElementById(statusId);
+    const prev = document.getElementById(previewId);
+    const btnLbl = document.getElementById(btnLabelId);
+    stat.className = 'del-hint';
+    stat.textContent = 'Processing photo…';
+    stat.style.display = '';
+    try {
+      const dataUrl = await compressPhoto(file, PHOTO_MAX_DIM, PHOTO_JPEG_QUALITY);
+      setUrl(dataUrl);
+      prev.src = dataUrl;
+      prev.style.display = 'block';
+      const approxKb = Math.round((dataUrl.length * 3 / 4) / 1024);
+      stat.className = 'del-hint ok';
+      stat.textContent = 'Photo ready (' + approxKb + ' KB). Tap again to retake.';
+      btnLbl.textContent = retakeLabel;
+    } catch (err) {
+      clearUrl();
+      stat.className = 'del-hint err';
+      stat.textContent = 'Could not process photo. Try again.';
+    }
+  };
+}
+
+/* Reset a photo capture UI back to its "not taken yet" state. Used when the
+   user switches away from Delivery. */
+function resetPhotoUi_(prefix, idleLabel) {
+  const prev = document.getElementById(prefix + 'Preview');
+  const stat = document.getElementById(prefix + 'PhotoStatus');
+  const btnLbl = document.getElementById(prefix + 'PhotoBtnLabel');
+  if (prev)   { prev.style.display = 'none'; prev.src = ''; }
+  if (stat)   { stat.style.display = 'none'; stat.textContent = ''; }
+  if (btnLbl) { btnLbl.textContent = idleLabel; }
+}
+
+/* Delivery drivers get an extra card with material, PO, for, notes, and TWO
+   required photos: the material for condition proof, and the bill of lading
+   for OCR + audit. The `capture="environment"` attribute asks the browser to
+   open the rear camera. Some older browsers still fall back to a file picker;
+   that is out of our control from HTML alone. */
 const DELIVERY_FOR_OPTIONS = TRADES.filter(t => t !== 'Delivery' && t !== 'Vendor / Other');
-let deliveryPhotoDataUrl = null;   // set when the user takes a photo
+let materialPhotoDataUrl = null;   // condition proof
+let bolPhotoDataUrl = null;        // for OCR
 
 function viewSignIn() {
-  deliveryPhotoDataUrl = null;
+  materialPhotoDataUrl = null;
+  bolPhotoDataUrl = null;
   render(`
     <div class="stack">
       <div class="card stack">
@@ -307,24 +352,35 @@ function viewSignIn() {
       </div>
 
       <div class="card stack" id="dCard" style="display:none">
-        <div class="del-hint">Deliveries need a few extra details and a photo of the load.</div>
-        <label><span class="lab">Material delivered *</span>
-          <input id="fMat" placeholder="e.g. 20 sheets 5/8 drywall"></label>
+        <div class="del-hint">Deliveries need two photos: the bill of lading and the material itself. We will read the BOL automatically.</div>
+        <label><span class="lab">Material delivered</span>
+          <input id="fMat" placeholder="Optional if the BOL is clear"></label>
         <label><span class="lab">PO or ticket #</span>
-          <input id="fPo" placeholder="Optional"></label>
+          <input id="fPo" placeholder="Optional, we try to read it from the BOL"></label>
         <label><span class="lab">For (trade or department)</span>
           <select id="fFor"><option value="">Optional&hellip;</option>
             ${DELIVERY_FOR_OPTIONS.map(t => `<option>${esc(t)}</option>`).join('')}</select></label>
         <label><span class="lab">Notes</span>
           <textarea id="fNotes" rows="2" placeholder="Optional"></textarea></label>
+
         <div>
-          <span class="lab">Photo of the delivery *</span>
+          <span class="lab">1. Photo of the bill of lading *</span>
           <label class="btn btn-dark" style="text-align:center;margin:0">
-            <span id="dPhotoBtnLabel">Take delivery photo</span>
-            <input id="fPhoto" type="file" accept="image/*" capture="environment" style="display:none">
+            <span id="bolPhotoBtnLabel">Scan bill of lading</span>
+            <input id="fBolPhoto" type="file" accept="image/*" capture="environment" style="display:none">
           </label>
-          <img id="dPreview" class="photo-preview" alt="">
-          <div id="dPhotoStatus" class="del-hint" style="margin-top:8px;display:none"></div>
+          <img id="bolPreview" class="photo-preview" alt="">
+          <div id="bolPhotoStatus" class="del-hint" style="margin-top:8px;display:none"></div>
+        </div>
+
+        <div>
+          <span class="lab">2. Photo of the material for condition check *</span>
+          <label class="btn btn-dark" style="text-align:center;margin:0">
+            <span id="matPhotoBtnLabel">Photo of the material</span>
+            <input id="fMatPhoto" type="file" accept="image/*" capture="environment" style="display:none">
+          </label>
+          <img id="matPreview" class="photo-preview" alt="">
+          <div id="matPhotoStatus" class="del-hint" style="margin-top:8px;display:none"></div>
         </div>
       </div>
 
@@ -353,47 +409,25 @@ function viewSignIn() {
       if (coInput.value === 'PruittHealth') coInput.value = '';
       coInput.disabled = false;
     }
-    // Show delivery card only when Trade = Delivery
+    // Show delivery card only when Trade = Delivery. Reset photo state on leave.
     if (tradeSel.value === 'Delivery') {
       dCard.style.display = '';
     } else {
       dCard.style.display = 'none';
-      // Clear photo state if user switched away
-      deliveryPhotoDataUrl = null;
-      const prev = document.getElementById('dPreview');
-      const stat = document.getElementById('dPhotoStatus');
-      if (prev) { prev.style.display = 'none'; prev.src = ''; }
-      if (stat) { stat.style.display = 'none'; stat.textContent = ''; }
-      const btnLbl = document.getElementById('dPhotoBtnLabel');
-      if (btnLbl) btnLbl.textContent = 'Take delivery photo';
+      materialPhotoDataUrl = null;
+      bolPhotoDataUrl = null;
+      resetPhotoUi_('bol', 'Scan bill of lading');
+      resetPhotoUi_('mat', 'Photo of the material');
     }
   };
 
-  document.getElementById('fPhoto').onchange = async (e) => {
-    const file = e.target.files && e.target.files[0];
-    if (!file) return;
-    const stat = document.getElementById('dPhotoStatus');
-    const prev = document.getElementById('dPreview');
-    const btnLbl = document.getElementById('dPhotoBtnLabel');
-    stat.className = 'del-hint';
-    stat.textContent = 'Processing photo…';
-    stat.style.display = '';
-    try {
-      const dataUrl = await compressPhoto(file, PHOTO_MAX_DIM, PHOTO_JPEG_QUALITY);
-      deliveryPhotoDataUrl = dataUrl;
-      prev.src = dataUrl;
-      prev.style.display = 'block';
-      // Approximate size after base64 overhead is 3/4 the string length.
-      const approxKb = Math.round((dataUrl.length * 3 / 4) / 1024);
-      stat.className = 'del-hint ok';
-      stat.textContent = 'Photo ready (' + approxKb + ' KB). Tap again to retake.';
-      btnLbl.textContent = 'Retake delivery photo';
-    } catch (err) {
-      deliveryPhotoDataUrl = null;
-      stat.className = 'del-hint err';
-      stat.textContent = 'Could not process photo. Try again.';
-    }
-  };
+  wirePhotoInput_('fBolPhoto', 'bolPreview', 'bolPhotoStatus', 'bolPhotoBtnLabel',
+    'Scan bill of lading', 'Retake bill of lading',
+    url => { bolPhotoDataUrl = url; }, () => { bolPhotoDataUrl = null; });
+
+  wirePhotoInput_('fMatPhoto', 'matPreview', 'matPhotoStatus', 'matPhotoBtnLabel',
+    'Photo of the material', 'Retake material photo',
+    url => { materialPhotoDataUrl = url; }, () => { materialPhotoDataUrl = null; });
 
   document.getElementById('bGo').onclick = async () => {
     clearBanners();
@@ -405,16 +439,16 @@ function viewSignIn() {
     if (!name)         { banner('Your name is required.'); return; }
     if (!co)           { banner('Company is required.'); return; }
 
-    // Delivery required extras
-    let material = '', po = '', forTrade = '', notes = '', photoDataUrl = null;
+    // Delivery required extras. Material text is now optional (OCR fills it
+    // from the BOL when possible). Both photos are required.
+    let material = '', po = '', forTrade = '', notes = '';
     if (trade === 'Delivery') {
       material = document.getElementById('fMat').value.trim();
       po       = document.getElementById('fPo').value.trim();
       forTrade = document.getElementById('fFor').value;
       notes    = document.getElementById('fNotes').value.trim();
-      if (!material) { banner('Please enter what was delivered.'); return; }
-      if (!deliveryPhotoDataUrl) { banner('A photo of the delivery is required.'); return; }
-      photoDataUrl = deliveryPhotoDataUrl;
+      if (!bolPhotoDataUrl)      { banner('A photo of the bill of lading is required.'); return; }
+      if (!materialPhotoDataUrl) { banner('A photo of the material is required.'); return; }
     }
 
     if (!document.getElementById('fAck').checked) {
@@ -431,12 +465,13 @@ function viewSignIn() {
       payload.po = po;
       payload.forTrade = forTrade;
       payload.notes = notes;
-      payload.photoDataUrl = photoDataUrl;
+      payload.materialPhotoDataUrl = materialPhotoDataUrl;
+      payload.bolPhotoDataUrl = bolPhotoDataUrl;
     }
 
     await submit(payload,
       'You are signed in. Sign out at this same code when you leave.',
-      'bGo', 'Saving…');
+      'bGo', 'Saving and scanning…');
   };
 }
 
@@ -493,18 +528,26 @@ async function submit(payload, doneText, btnId, busyText) {
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const out = await res.json().catch(() => ({ ok: true }));
     if (out && out.ok === false) throw new Error(out.error || 'save rejected');
-    viewDone(doneText);
+    viewDone(doneText, out);
   } catch (e) {
     banner('Could not save (' + e.message + '). Check your signal and try again.');
     if (btn) { btn.disabled = false; btn.textContent = btnId === 'bGo' ? 'Sign in now' : btn.textContent; }
   }
 }
 
-function viewDone(msg) {
+function viewDone(msg, serverOut) {
+  // If the server extracted anything from the BOL, show it as a friendly flash.
+  const bits = [];
+  if (serverOut && serverOut.detectedPo)       bits.push('Detected PO ' + serverOut.detectedPo);
+  if (serverOut && serverOut.detectedMaterial) bits.push('Detected material: ' + serverOut.detectedMaterial);
+  const detected = bits.length
+    ? `<p class="del-hint ok" style="margin:0 0 18px">${esc(bits.join(' · '))}</p>`
+    : '';
   render(`
     <div class="done">
       <div class="check">✔</div>
       <p>${esc(msg)}</p>
+      ${detected}
       <button class="btn btn-dark" id="bDone">Done</button>
     </div>`, site || '');
   document.getElementById('bDone').onclick = viewSites;
