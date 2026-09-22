@@ -178,6 +178,12 @@ let site = null;
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const configured = () => APP_URL.startsWith('http');
 const initials = s => String(s).trim().split(/\s+/).slice(0, 2).map(w => w[0] || '').join('').toUpperCase();
+const emailOk = s => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
+const todayStr = () => {
+  const d = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+};
 
 function render(html, sub) {
   subTitle.textContent = sub;
@@ -196,6 +202,18 @@ function banner(msg) {
   main.prepend(b);
 }
 
+function viewLanding() {
+  site = null;
+  render(`
+    <div class="stack">
+      <button class="btn btn-green" id="bJobsite">Jobsite sign in</button>
+      <button class="btn btn-dark" id="bMeeting">On-site meeting sign in</button>
+    </div>`, 'What are you here for?');
+  if (!configured()) banner('Setup incomplete: the Apps Script URL has not been pasted into this file yet. See SETUP_GUIDE.md.');
+  document.getElementById('bJobsite').onclick = viewSites;
+  document.getElementById('bMeeting').onclick = viewMeetingForm;
+}
+
 function viewSites() {
   site = null;
   render(`
@@ -207,12 +225,70 @@ function viewSites() {
             ${SITES.map(s => `<option>${esc(s)}</option>`).join('')}
           </select></label>
       </div>
+      <button class="btn btn-ghost" id="bBackLanding">&#8592; Back</button>
     </div>`, 'Select your jobsite');
   if (!configured()) banner('Setup incomplete: the Apps Script URL has not been pasted into this file yet. See SETUP_GUIDE.md.');
   document.getElementById('fSite').onchange = (e) => {
     if (!e.target.value) return;
     site = e.target.value;
     viewAction();
+  };
+  document.getElementById('bBackLanding').onclick = viewLanding;
+}
+
+/* On-site meeting sign in. Shares the SITES list (relabeled "Project" here)
+   and the same APP_URL/submit plumbing as the jobsite flow above, so one QR
+   code can serve both: scanning it lands on viewLanding(), and this is the
+   other branch from there. Posts action: 'MeetingSignIn', handled server
+   side by handleMeetingSignIn_ into its own "Meetings" tab. */
+function viewMeetingForm() {
+  site = null;
+  render(`
+    <div class="stack">
+      <div class="card stack">
+        <label><span class="lab">Project *</span>
+          <select id="mProject"><option value="">Select project&hellip;</option>
+            ${SITES.map(s => `<option>${esc(s)}</option>`).join('')}</select></label>
+        <label><span class="lab">Meeting date</span>
+          <input id="mDate" type="date" value="${todayStr()}"></label>
+        <label><span class="lab">Your name</span>
+          <input id="mName" autocomplete="name" placeholder="First and last name"></label>
+        <label><span class="lab">Company</span>
+          <input id="mCo" autocomplete="organization" placeholder="Who you work for"></label>
+        <label><span class="lab">Role / Title</span>
+          <input id="mRole" placeholder="e.g. Superintendent, Architect, Owner's Rep"></label>
+        <label><span class="lab">Email *</span>
+          <input id="mEmail" type="email" autocomplete="email" placeholder="you@company.com"></label>
+        <label><span class="lab">Phone</span>
+          <input id="mPhone" type="tel" autocomplete="tel" placeholder="Optional"></label>
+      </div>
+      <button class="btn btn-green" id="mGo">Sign in</button>
+      <button class="btn btn-ghost" id="bBackLanding">&#8592; Back</button>
+    </div>`, 'On-Site Meeting');
+  if (!configured()) banner('Setup incomplete: the Apps Script URL has not been pasted into this file yet. See SETUP_GUIDE.md.');
+  document.getElementById('bBackLanding').onclick = viewLanding;
+
+  document.getElementById('mGo').onclick = async () => {
+    clearBanners();
+    const project = document.getElementById('mProject').value;
+    const date  = document.getElementById('mDate').value;
+    const name  = document.getElementById('mName').value.trim();
+    const co    = document.getElementById('mCo').value.trim();
+    const role  = document.getElementById('mRole').value.trim();
+    const email = document.getElementById('mEmail').value.trim();
+    const phone = document.getElementById('mPhone').value.trim();
+
+    if (!project) { banner('Project is required.'); return; }
+    if (!date)    { banner('Meeting date is required.'); return; }
+    if (!name)    { banner('Your name is required.'); return; }
+    if (!email)   { banner('Email is required.'); return; }
+    if (!emailOk(email)) { banner('Enter a valid email address.'); return; }
+
+    const payload = {
+      action: 'MeetingSignIn', meetingType: 'On-Site Meeting',
+      project, date, name, company: co, role, email, phone
+    };
+    await submit(payload, "You're signed in for this meeting.", 'mGo', 'Saving…', viewLanding);
   };
 }
 
@@ -594,7 +670,7 @@ async function viewSignOut() {
   list.appendChild(back);
 }
 
-async function submit(payload, doneText, btnId, busyText) {
+async function submit(payload, doneText, btnId, busyText, afterView) {
   const btn = btnId ? document.getElementById(btnId) : null;
   if (btn) { btn.disabled = true; btn.textContent = busyText; }
   try {
@@ -617,14 +693,18 @@ async function submit(payload, doneText, btnId, busyText) {
     // No response body available in no-cors, so viewDone gets an empty object
     // and simply omits the "Detected PO" flash. The PO still appears in the
     // notification email and the Sheet.
-    viewDone(doneText, {});
+    viewDone(doneText, {}, afterView);
   } catch (e) {
     banner('Could not save (' + e.message + '). Check your signal and try again.');
-    if (btn) { btn.disabled = false; btn.textContent = btnId === 'bGo' ? 'Sign in now' : btn.textContent; }
+    if (btn) {
+      btn.disabled = false;
+      if (btnId === 'bGo') btn.textContent = 'Sign in now';
+      else if (btnId === 'mGo') btn.textContent = 'Sign in';
+    }
   }
 }
 
-function viewDone(msg, serverOut) {
+function viewDone(msg, serverOut, afterView) {
   // If the server extracted anything from the BOL, show it as a friendly flash.
   const bits = [];
   if (serverOut && serverOut.detectedPo)       bits.push('Detected PO ' + serverOut.detectedPo);
@@ -639,10 +719,10 @@ function viewDone(msg, serverOut) {
       ${detected}
       <button class="btn btn-dark" id="bDone">Done</button>
     </div>`, site || '');
-  document.getElementById('bDone').onclick = viewSites;
+  document.getElementById('bDone').onclick = afterView || viewSites;
 }
 
-viewSites();
+viewLanding();
 </script>
 </body>
 </html>
