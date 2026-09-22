@@ -75,6 +75,17 @@
             background: linear-gradient(135deg, var(--ph-green), var(--ph-dark)); }
   .person .nm { display: block; font-size: 17px; font-weight: 800; color: var(--ph-ink); }
   .person .co { display: block; font-size: 13px; font-weight: 600; color: #6B7A70; }
+  .choice { display: flex; align-items: center; gap: 14px; width: 100%; text-align: left;
+            border: 1.5px solid var(--ph-line); background: #fff; border-radius: var(--radius);
+            box-shadow: var(--shadow); padding: 16px 18px; cursor: pointer; font-family: inherit; }
+  .choice:focus-visible { outline: 3px solid var(--ph-green); outline-offset: 2px; }
+  .choice .cico { flex: none; width: 46px; height: 46px; border-radius: 50%; display: flex;
+                  align-items: center; justify-content: center; font-size: 21px; color: #fff;
+                  background: linear-gradient(135deg, var(--ph-green), var(--ph-dark)); }
+  .choice .ctxt { flex: 1; min-width: 0; }
+  .choice .ctitle { display: block; font-size: 17px; font-weight: 800; color: var(--ph-dark); }
+  .choice .cdesc { display: block; margin-top: 2px; font-size: 13px; font-weight: 600; color: #6B7A70; }
+  .choice .cchev { flex: none; font-size: 22px; color: #B7C4BB; }
   .rules { background: #fff; border: 1px solid var(--ph-line); border-radius: var(--radius);
            box-shadow: var(--shadow); padding: 14px 16px; }
   .rules .lab { margin-bottom: 8px; }
@@ -202,53 +213,75 @@ function banner(msg) {
   main.prepend(b);
 }
 
+/* Project is picked once, up front, then shared by all three flows below
+   (jobsite, delivery, meeting) so nobody re-selects it mid-flow. */
 function viewLanding() {
   site = null;
   render(`
     <div class="stack">
-      <button class="btn btn-green" id="bJobsite">Jobsite sign in</button>
-      <button class="btn btn-dark" id="bMeeting">On-site meeting sign in</button>
-    </div>`, 'What are you here for?');
-  if (!configured()) banner('Setup incomplete: the Apps Script URL has not been pasted into this file yet. See SETUP_GUIDE.md.');
-  document.getElementById('bJobsite').onclick = viewSites;
-  document.getElementById('bMeeting').onclick = viewMeetingForm;
-}
-
-function viewSites() {
-  site = null;
-  render(`
-    <div class="stack">
       <div class="card">
-        <label><span class="lab">Jobsite</span>
+        <label><span class="lab">Project</span>
           <select id="fSite">
-            <option value="">Select your jobsite&hellip;</option>
+            <option value="">Select your project&hellip;</option>
             ${SITES.map(s => `<option>${esc(s)}</option>`).join('')}
           </select></label>
       </div>
-      <button class="btn btn-ghost" id="bBackLanding">&#8592; Back</button>
-    </div>`, 'Select your jobsite');
+    </div>`, 'Select your project');
   if (!configured()) banner('Setup incomplete: the Apps Script URL has not been pasted into this file yet. See SETUP_GUIDE.md.');
   document.getElementById('fSite').onchange = (e) => {
     if (!e.target.value) return;
     site = e.target.value;
-    viewAction();
+    viewTypeChoice();
   };
+}
+
+/* What kind of sign in, now that the project is known. Delivery is its own
+   shortcut straight into viewSignIn with Trade preset, since drivers only
+   ever sign in (never out) and shouldn't have to hunt for "Delivery" in the
+   Trade dropdown. */
+function viewTypeChoice() {
+  render(`
+    <div class="stack">
+      <button class="choice" id="bJobsite">
+        <span class="cico">&#128694;</span>
+        <span class="ctxt">
+          <span class="ctitle">Jobsite sign in</span>
+          <span class="cdesc">Trade work, inspections, daily site access</span>
+        </span>
+        <span class="cchev">&#8250;</span>
+      </button>
+      <button class="choice" id="bDelivery">
+        <span class="cico">&#128230;</span>
+        <span class="ctxt">
+          <span class="ctitle">Delivery</span>
+          <span class="cdesc">Dropping off material or equipment</span>
+        </span>
+        <span class="cchev">&#8250;</span>
+      </button>
+      <button class="choice" id="bMeeting">
+        <span class="cico">&#128203;</span>
+        <span class="ctxt">
+          <span class="ctitle">On-site meeting sign in</span>
+          <span class="cdesc">Kickoffs, OAC meetings, and visitors</span>
+        </span>
+        <span class="cchev">&#8250;</span>
+      </button>
+      <button class="btn btn-ghost" id="bBackLanding">&#8592; Change project</button>
+    </div>`, site);
+  document.getElementById('bJobsite').onclick = viewAction;
+  document.getElementById('bDelivery').onclick = () => viewSignIn('Delivery');
+  document.getElementById('bMeeting').onclick = viewMeetingForm;
   document.getElementById('bBackLanding').onclick = viewLanding;
 }
 
-/* On-site meeting sign in. Shares the SITES list (relabeled "Project" here)
-   and the same APP_URL/submit plumbing as the jobsite flow above, so one QR
-   code can serve both: scanning it lands on viewLanding(), and this is the
-   other branch from there. Posts action: 'MeetingSignIn', handled server
-   side by handleMeetingSignIn_ into its own "Meetings" tab. */
+/* On-site meeting sign in. Project comes from the shared picker above (module
+   level `site`), so this form only asks what's specific to the attendee.
+   Posts action: 'MeetingSignIn', handled server side by handleMeetingSignIn_
+   into its own "Meetings" tab. */
 function viewMeetingForm() {
-  site = null;
   render(`
     <div class="stack">
       <div class="card stack">
-        <label><span class="lab">Project *</span>
-          <select id="mProject"><option value="">Select project&hellip;</option>
-            ${SITES.map(s => `<option>${esc(s)}</option>`).join('')}</select></label>
         <label><span class="lab">Meeting date</span>
           <input id="mDate" type="date" value="${todayStr()}"></label>
         <label><span class="lab">Your name</span>
@@ -263,14 +296,13 @@ function viewMeetingForm() {
           <input id="mPhone" type="tel" autocomplete="tel" placeholder="Optional"></label>
       </div>
       <button class="btn btn-green" id="mGo">Sign in</button>
-      <button class="btn btn-ghost" id="bBackLanding">&#8592; Back</button>
-    </div>`, 'On-Site Meeting');
+      <button class="btn btn-ghost" id="bBack">&#8592; Back</button>
+    </div>`, site);
   if (!configured()) banner('Setup incomplete: the Apps Script URL has not been pasted into this file yet. See SETUP_GUIDE.md.');
-  document.getElementById('bBackLanding').onclick = viewLanding;
+  document.getElementById('bBack').onclick = viewTypeChoice;
 
   document.getElementById('mGo').onclick = async () => {
     clearBanners();
-    const project = document.getElementById('mProject').value;
     const date  = document.getElementById('mDate').value;
     const name  = document.getElementById('mName').value.trim();
     const co    = document.getElementById('mCo').value.trim();
@@ -278,7 +310,6 @@ function viewMeetingForm() {
     const email = document.getElementById('mEmail').value.trim();
     const phone = document.getElementById('mPhone').value.trim();
 
-    if (!project) { banner('Project is required.'); return; }
     if (!date)    { banner('Meeting date is required.'); return; }
     if (!name)    { banner('Your name is required.'); return; }
     if (!email)   { banner('Email is required.'); return; }
@@ -286,7 +317,7 @@ function viewMeetingForm() {
 
     const payload = {
       action: 'MeetingSignIn', meetingType: 'On-Site Meeting',
-      project, date, name, company: co, role, email, phone
+      project: site, date, name, company: co, role, email, phone
     };
     await submit(payload, "You're signed in for this meeting.", 'mGo', 'Saving…', viewLanding);
   };
@@ -297,11 +328,11 @@ function viewAction() {
     <div class="stack">
       <button class="btn btn-green" id="bIn">Sign in</button>
       <button class="btn btn-red" id="bOut">Sign out</button>
-      <button class="btn btn-ghost" id="bBack">&#8592; Change site</button>
+      <button class="btn btn-ghost" id="bBack">&#8592; Change type</button>
     </div>`, site);
-  document.getElementById('bIn').onclick = viewSignIn;
+  document.getElementById('bIn').onclick = () => viewSignIn();
   document.getElementById('bOut').onclick = viewSignOut;
-  document.getElementById('bBack').onclick = viewSites;
+  document.getElementById('bBack').onclick = viewTypeChoice;
 }
 
 /* Turn a File (from a camera capture) into a compressed JPEG Blob.
@@ -471,7 +502,7 @@ let bolPhotoBlob = null;        // for OCR
 let materialPreviewUrl = null;
 let bolPreviewUrl = null;
 
-function viewSignIn() {
+function viewSignIn(presetTrade) {
   clearPhotoState_();
   render(`
     <div class="stack">
@@ -532,7 +563,7 @@ function viewSignIn() {
       <button class="btn btn-green" id="bGo">Sign in now</button>
       <button class="btn btn-ghost" id="bBack">&#8592; Back</button>
     </div>`, site);
-  document.getElementById('bBack').onclick = viewAction;
+  document.getElementById('bBack').onclick = presetTrade ? viewTypeChoice : viewAction;
   const tradeSel = document.getElementById('fTrade');
   const coInput = document.getElementById('fCo');
   const dCard = document.getElementById('dCard');
@@ -565,6 +596,11 @@ function viewSignIn() {
 
   wireRemoveButton_('bolPhotoRemove', 'bol', 'Scan bill of lading');
   wireRemoveButton_('matPhotoRemove', 'mat', 'Photo of the material');
+
+  if (presetTrade) {
+    tradeSel.value = presetTrade;
+    tradeSel.onchange();
+  }
 
   document.getElementById('bGo').onclick = async () => {
     clearBanners();
@@ -719,7 +755,7 @@ function viewDone(msg, serverOut, afterView) {
       ${detected}
       <button class="btn btn-dark" id="bDone">Done</button>
     </div>`, site || '');
-  document.getElementById('bDone').onclick = afterView || viewSites;
+  document.getElementById('bDone').onclick = afterView || viewLanding;
 }
 
 viewLanding();
