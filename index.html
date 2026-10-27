@@ -9,7 +9,7 @@
      visit. See SETUP_GUIDE.md. -->
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
-<meta name="theme-color" content="#17402A">
+<meta name="theme-color" content="#0B4F30">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="PHCS Sign In">
 <style>
@@ -21,10 +21,18 @@
   @import url('https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;600;700;800;900&display=swap');
   :root {
     --font: 'Nunito Sans', system-ui, Arial, sans-serif;
-    /* PruittHealth brand greens. If marketing has official hex
-       values, paste them here and the whole app updates. */
-    --ph-dark:   #17402A;   /* deep pine: headers, primary text accents */
-    --ph-green:  #4E9D54;   /* leaf green: actions, highlights */
+    /* PruittHealth brand colors. --ph-dark is sampled directly from the real
+       logo (word/media/image2.jpg in the corporate Letterhead Template.docx,
+       the tree mark + "PruittHealth" wordmark, no facility name baked in).
+       --ph-mint is the logo's actual light green ("Health" wordmark, light
+       leaves) but it's too low-contrast against both white and --ph-dark to
+       use for button fills or small text (≈1.7:1, fails WCAG AA), so it's
+       kept for decorative accents only. --ph-green stays a separate,
+       higher-contrast mid-green for buttons and labels; the brand assets
+       don't include a usable mid-tone to replace it with. */
+    --ph-dark:   #0B4F30;   /* deep pine, sampled from logo.png: headers, primary text accents */
+    --ph-mint:   #8ED6A8;   /* sampled from logo.png: decorative accents only, not text/buttons */
+    --ph-green:  #4E9D54;   /* mid green, not from the logo: actions, highlights (needs contrast) */
     --ph-soft:   #EAF3EA;   /* soft green tint */
     --ph-mist:   #F6F8F5;   /* page background */
     --ph-line:   #D9E5D8;   /* hairline borders */
@@ -32,7 +40,7 @@
     --ph-out:    #5B6B61;   /* sign out */
     --ph-err:    #A0442F;
     --radius: 16px;
-    --shadow: 0 2px 10px rgba(23, 64, 42, .08);
+    --shadow: 0 2px 10px rgba(11, 79, 48, .08);
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: var(--font); color: var(--ph-ink);
@@ -40,9 +48,13 @@
   .wrap { max-width: 480px; margin: 0 auto; min-height: 100vh; display: flex; flex-direction: column; }
   header { background: #fff; border-bottom: 1px solid var(--ph-line); box-shadow: var(--shadow); }
   .accent { height: 6px; background: linear-gradient(90deg, var(--ph-dark), var(--ph-green)); }
-  .head-inner { padding: 18px 20px 16px; display: flex; align-items: center; gap: 14px; }
-  .logo { height: 48px; width: auto; flex: none; }
-  .brand .wordmark { font-size: 22px; font-weight: 900; letter-spacing: -.01em; color: var(--ph-dark); line-height: 1.1; }
+  .head-inner { padding: 18px 20px 16px; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+  .logo { height: 40px; width: auto; max-width: 100%; flex: none; }
+  /* logo.png already contains the "PruittHealth" wordmark, so the text
+     wordmark only shows if the image fails to load. */
+  .brand .wordmark { display: none; font-size: 22px; font-weight: 900; letter-spacing: -.01em; color: var(--ph-dark); line-height: 1.1; }
+  header.no-logo .logo { display: none; }
+  header.no-logo .brand .wordmark { display: block; }
   .brand .division { font-size: 11px; font-weight: 700; letter-spacing: .22em; text-transform: uppercase;
                      color: var(--ph-green); margin-top: 3px; }
   .head-sub { padding: 0 20px 14px; }
@@ -131,7 +143,7 @@
   <header>
     <div class="accent"></div>
     <div class="head-inner">
-      <img class="logo" src="logo.png" alt="PruittHealth" onerror="this.style.display='none'">
+      <img class="logo" src="logo.png" alt="PruittHealth" onerror="this.closest('header').classList.add('no-logo')">
       <div class="brand">
         <div class="wordmark">PruittHealth</div>
         <div class="division">Construction Services</div>

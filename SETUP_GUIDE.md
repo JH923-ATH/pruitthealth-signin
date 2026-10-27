@@ -115,7 +115,7 @@ Once the Pages URL is live, generate a QR code that points to it. Any free QR ge
 
 The QR code is just a convenient way to get the Pages URL onto a phone without typing it; anyone can also bookmark that URL directly or, better, use their phone's **Add to Home Screen** (iOS Safari or Android Chrome, share menu → Add to Home Screen). That creates a tap-to-open icon with the PHCS name and icon below, no browser address bar, feels like a real app. Good for PruittHealth employees and regular subs who sign in daily; the QR code stays the easier path for one-time visitors and delivery drivers.
 
-This works because `manifest.json`, `apple-touch-icon.png`, `icon-192.png`, and `icon-512.png` are already in the repo and linked from `index.html`. The icons are currently a placeholder "PHCS" monogram in the brand colors; once you have the official logo (see Open Items in PROJECT_BRIEF.md), regenerate those three PNGs from it and nothing else needs to change.
+This works because `manifest.json`, `apple-touch-icon.png`, `icon-192.png`, and `icon-512.png` are already in the repo and linked from `index.html`. The icons use the PruittHealth tree mark from `logo.png` on a brand green tile.
 
 ---
 
@@ -201,12 +201,33 @@ Run it daily or weekly, whichever fits the site; the tool does not assume a cade
 After a morning safety meeting, you can generate a printable PDF attendance report instead of reading the raw SafetyMeetings tab:
 
 1. In the Apps Script editor, in the function dropdown pick **exportSafetyMeetingReports**, click **Run**.
-2. It builds one PDF per project that had a safety meeting today, listing the topic, who led it, and a table of attendees with their company, trade, and sign in time. PDFs land in a **Safety Meeting Reports** folder in your Drive (auto created the first time).
+2. It builds one PDF per project that had a safety meeting today, styled like the corporate PruittHealth letterhead (logo centered at the top, "CONSTRUCTION SERVICES" beneath, mint accent bar, brand green headings), listing the topic, who led it, and a table of attendees with their company, trade, and sign in time. PDFs land in a **Safety Meeting Reports** folder in your Drive (auto created the first time). The logo is embedded inside Code.gs itself, so there is nothing extra to upload. Running this from the editor uses whatever Code.gs is saved there, so after pasting a new Code.gs you can run it right away; redeploying is only needed for the phone app side.
 3. Optional: set `SAFETY_REPORT_EMAIL` in the Code.gs CONFIG block to also email each PDF when it's generated, then redeploy as a **New version** (see the warning in Part C).
 
 This only covers today's meetings, matching the normal "run it right after the briefing" workflow. For older dates, open the SafetyMeetings tab directly and use Sheets' own **File → Download** (PDF, CSV, Excel) after filtering or sorting to the rows you want.
 
 Re-running `exportSafetyMeetingReports` for a project that already has a report today replaces the old PDF rather than creating duplicates.
+
+### Weekly reports (automatic)
+
+Two weekly reports run together on one schedule, each covering the **last 7 days** with one PDF per project:
+
+* **Safety meetings** (`exportWeeklySafetyMeetingReports`): a section for each meeting in date order. Saved to **Safety Meeting Reports**, named like `Brookhaven Safety Meetings 2026-10-21 to 2026-10-27.pdf`, emailed too if `SAFETY_REPORT_EMAIL` is set.
+* **Jobsite sign ins** (`exportWeeklySignInReports`): a daily summary (people on site, hours, anyone who never signed out), manpower by company (worker days and hours), each day's sign ins with in/out times and hours, and the week's deliveries (driver, material, PO). Saved to **Jobsite Sign In Reports**, named like `Brookhaven Jobsite Sign Ins 2026-10-21 to 2026-10-27.pdf`, emailed too if `SIGNIN_REPORT_EMAIL` is set.
+
+To have both run on their own every week:
+
+1. In the Apps Script editor, pick **installWeeklyReportTrigger** in the function dropdown and click **Run** (once). Approve the extra permission if Google asks.
+2. That's it. By default they run every **Friday around 4 PM Eastern**, so each report covers Saturday through Friday.
+
+To change the day or time, edit `WEEKLY_REPORT_WEEKDAY` (MONDAY to SUNDAY) and `WEEKLY_REPORT_HOUR` (0 to 23) in the Code.gs CONFIG block, save, and run **installWeeklyReportTrigger** again; it replaces the old schedule rather than adding a second one. To stop the weekly reports, open **Triggers** (clock icon on the left) and delete the `exportWeeklyReports` trigger. You can also run **exportWeeklySafetyMeetingReports** or **exportWeeklySignInReports** by hand any time for an on demand report.
+
+Notes:
+
+* Google runs scheduled triggers within the chosen hour, not at an exact minute. Projects with no activity that week get no PDF.
+* Hours come from pairing each person's sign in with their next sign out the same day, so someone who steps out for lunch and signs back in shows as two lines. Anyone who never signed out shows **Not signed out** and adds no hours, so the hours total is only as good as people's sign outs.
+* Delivery drivers are listed under Deliveries rather than counted as workers on site.
+* If one report fails, the other still runs, and Google emails you about the failure.
 
 ---
 
