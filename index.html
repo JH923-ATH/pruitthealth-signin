@@ -172,6 +172,25 @@ const SAFETY_RULES = [
   "I am fit for duty and not impaired",
 ];
 
+/* Preset toolbox talk topics for the Morning safety meeting form. Pick from
+   this list covers the common cases fast on a phone; "Other" reveals a free
+   text field for anything not listed. Edit this list anytime, no code
+   changes needed elsewhere. */
+const SAFETY_TOPICS = [
+  "Ladder safety",
+  "Fall protection",
+  "PPE compliance",
+  "Heat stress / hydration",
+  "Electrical safety / lockout-tagout",
+  "Housekeeping / slip, trip, and fall hazards",
+  "Fire prevention",
+  "Equipment / tool operation",
+  "Hazard communication",
+  "Emergency procedures",
+  "ICRA / infection control",
+  "Other",
+];
+
 /* Photo compression settings. 900px longest side + JPEG q0.72 keeps most
    delivery photos under 250 KB while staying legible. Modern camera photos
    are 12-50 MP; decoding them uses 30-100 MB per photo. On two-photo flows
@@ -347,7 +366,10 @@ function viewSafetyMeetingForm() {
         <label><span class="lab">Meeting date</span>
           <input id="smDate" type="date" value="${todayStr()}"></label>
         <label><span class="lab">Topic discussed</span>
-          <input id="smTopic" placeholder="e.g. Ladder safety, heat stress"></label>
+          <select id="smTopicSelect"><option value="">Select topic&hellip;</option>
+            ${SAFETY_TOPICS.map(t => `<option>${esc(t)}</option>`).join('')}</select></label>
+        <label id="smTopicOtherRow" style="display:none"><span class="lab">Describe the topic</span>
+          <input id="smTopicOther" placeholder="Type the topic discussed"></label>
         <label><span class="lab">Meeting led by</span>
           <input id="smLeader" placeholder="Superintendent or safety lead"></label>
       </div>
@@ -374,17 +396,27 @@ function viewSafetyMeetingForm() {
   if (!configured()) banner('Setup incomplete: the Apps Script URL has not been pasted into this file yet. See SETUP_GUIDE.md.');
   document.getElementById('bBack').onclick = viewTypeChoice;
 
+  const topicSelect = document.getElementById('smTopicSelect');
+  const topicOtherRow = document.getElementById('smTopicOtherRow');
+  topicSelect.onchange = () => {
+    topicOtherRow.style.display = topicSelect.value === 'Other' ? '' : 'none';
+  };
+
   document.getElementById('smGo').onclick = async () => {
     clearBanners();
-    const date   = document.getElementById('smDate').value;
-    const topic  = document.getElementById('smTopic').value.trim();
+    const date = document.getElementById('smDate').value;
+    const topicPicked = topicSelect.value;
+    const topic  = topicPicked === 'Other'
+      ? document.getElementById('smTopicOther').value.trim()
+      : topicPicked;
     const leader = document.getElementById('smLeader').value.trim();
     const name   = document.getElementById('smName').value.trim();
     const trade  = document.getElementById('smTrade').value;
     const co     = document.getElementById('smCo').value.trim();
 
     if (!date)  { banner('Meeting date is required.'); return; }
-    if (!topic) { banner('Topic discussed is required.'); return; }
+    if (!topicPicked) { banner('Topic discussed is required.'); return; }
+    if (!topic) { banner('Describe the topic discussed.'); return; }
     if (!name)  { banner('Your name is required.'); return; }
     if (!co)    { banner('Company is required.'); return; }
     if (!document.getElementById('smAck').checked) {

@@ -184,7 +184,7 @@ If you skip this step, delivery sign in still works but OCR is silently skipped 
 
 No extra deployment needed; it uses the same `/exec` URL and the same `Code.gs` already deployed.
 
-On the landing choice screen, workers can pick **Morning safety meeting** instead of a jobsite sign in. Each attendee enters the meeting date, topic, and who led it, plus their own name, trade, and company, and checks the same site safety acknowledgement. One row is written per attendee to a new **SafetyMeetings** tab (created automatically on first submission, same as the **Meetings** tab).
+On the landing choice screen, workers can pick **Morning safety meeting** instead of a jobsite sign in. Each attendee picks the topic from a dropdown (edit the `SAFETY_TOPICS` list in `index.html` to change the presets; picking **Other** reveals a free text field), enters who led it, plus their own name, trade, and company, and checks the same site safety acknowledgement. One row is written per attendee to a new **SafetyMeetings** tab (created automatically on first submission, same as the **Meetings** tab).
 
 Run it daily or weekly, whichever fits the site; the tool does not assume a cadence. It is independent of the per sign in safety checkbox in the regular jobsite flow, so a worker can show up in both tabs on the same day.
 
