@@ -78,12 +78,18 @@ const SAFETY_MEETING_HEADERS    = [
 // Report PDF exports. exportSafetyMeetingReports (today's safety meetings) is
 // run by hand from the Apps Script editor. exportWeeklyReports (the 7 full days
 // ending yesterday, safety meetings AND jobsite sign ins) runs on its own once
-// installWeeklyReportTrigger has been run once. Emails are optional; blank
-// means the PDFs are only saved to Drive, no email sent.
+// installWeeklyReportTrigger has been run once. Each run's PDFs go out in one
+// email per recipient.
+// Where report emails go: set a Script Property named REPORT_EMAIL (Project
+// Settings > Script Properties) rather than typing an address here. This
+// file lives in a public GitHub repo, and a property also survives pasting in
+// a newer Code.gs. The two constants below are optional per report overrides;
+// leave them blank to use REPORT_EMAIL. Comma separate for several addresses.
+// If nothing is set, PDFs are only saved to Drive.
 const SAFETY_REPORT_FOLDER_NAME = 'Safety Meeting Reports';
-const SAFETY_REPORT_EMAIL = '';   // e.g. 'you@pruitthealth.com'. Blank = no email.
+const SAFETY_REPORT_EMAIL = '';
 const SIGNIN_REPORT_FOLDER_NAME = 'Jobsite Sign In Reports';
-const SIGNIN_REPORT_EMAIL = '';   // e.g. 'you@pruitthealth.com'. Blank = no email.
+const SIGNIN_REPORT_EMAIL = '';
 // When the weekly reports run. Day is MONDAY..SUNDAY; hour is 0-23 Eastern.
 // After changing either, run installWeeklyReportTrigger again.
 const WEEKLY_REPORT_WEEKDAY = 'FRIDAY';
@@ -535,33 +541,47 @@ function getTodaysSafetyMeetingTopic_(project) {
  */
 function exportSafetyMeetingReports() {
   const today = Utilities.formatDate(new Date(), TIMEZONE, 'yyyy-MM-dd');
-  writeSafetyMeetingReports_(today, today, 'Safety Meeting ' + today, "today's");
+  emailReports_(writeSafetyMeetingReports_(today, today, 'Safety Meeting ' + today),
+    'Safety meeting reports, ' + today,
+    "Today's safety meeting attendance reports.");
 }
 
 /**
- * What the weekly trigger runs: both weekly reports. Each runs even if the
- * other fails; any failure is rethrown at the end so Google's trigger failure
- * email still reaches you.
+ * What the weekly trigger runs: both weekly reports, sent together in one
+ * email. Each report runs even if the other fails; the email notes anything
+ * that failed, and the failure is rethrown at the end so Google's trigger
+ * failure email still reaches you.
  */
 function exportWeeklyReports() {
-  const errors = [];
-  [exportWeeklySafetyMeetingReports, exportWeeklySignInReports].forEach(fn => {
-    try { fn(); } catch (err) {
-      errors.push(fn.name + ': ' + (err && err.message || err));
-      Logger.log(fn.name + ' failed: ' + err);
+  const w = lastFullWeek_();
+  const period = w.from + ' to ' + w.to;
+  const items = [], errors = [];
+  [
+    ['Safety meeting reports', () => writeSafetyMeetingReports_(w.from, w.to, 'Safety Meetings ' + period)],
+    ['Jobsite sign in reports', () => writeSignInReports_(w.from, w.to, 'Jobsite Sign Ins ' + period)]
+  ].forEach(([label, run]) => {
+    try { items.push.apply(items, run()); } catch (err) {
+      errors.push(label + ': ' + (err && err.message || err));
+      Logger.log(label + ' failed: ' + err);
     }
   });
+  emailReports_(items, 'Weekly jobsite reports, ' + period,
+    'Weekly safety meeting and jobsite sign in reports for ' + period + '.',
+    { errors: errors, sendIfEmpty: [SAFETY_REPORT_EMAIL, SIGNIN_REPORT_EMAIL] });
   if (errors.length) throw new Error('Weekly report errors: ' + errors.join(' | '));
 }
 
 /**
- * Weekly safety meeting roll up: one PDF per project covering the 7 full days
- * ending yesterday (see lastFullWeek_), with a section per meeting in date
- * order. Can also be run by hand from the editor.
+ * Weekly safety meeting roll up on its own: one PDF per project covering the
+ * 7 full days ending yesterday (see lastFullWeek_), with a section per
+ * meeting in date order. For running by hand from the editor.
  */
 function exportWeeklySafetyMeetingReports() {
   const w = lastFullWeek_();
-  writeSafetyMeetingReports_(w.from, w.to, 'Safety Meetings ' + w.from + ' to ' + w.to, "the past week's");
+  const period = w.from + ' to ' + w.to;
+  emailReports_(writeSafetyMeetingReports_(w.from, w.to, 'Safety Meetings ' + period),
+    'Weekly safety meeting reports, ' + period,
+    'Safety meeting attendance reports for ' + period + '.');
 }
 
 /**
@@ -573,7 +593,10 @@ function exportWeeklySafetyMeetingReports() {
  */
 function exportWeeklySignInReports() {
   const w = lastFullWeek_();
-  writeSignInReports_(w.from, w.to, 'Jobsite Sign Ins ' + w.from + ' to ' + w.to);
+  const period = w.from + ' to ' + w.to;
+  emailReports_(writeSignInReports_(w.from, w.to, 'Jobsite Sign Ins ' + period),
+    'Weekly jobsite sign in reports, ' + period,
+    'Jobsite sign in reports for ' + period + '.');
 }
 
 /**
@@ -622,18 +645,66 @@ function lastFullWeek_() {
 /**
  * Saves a report PDF into the named Drive folder (created if missing),
  * replacing any earlier file of the same name so re-runs don't pile up
- * duplicates, and emails it when an address is given.
+ * duplicates. Returns { name, url, blob, to } for emailReports_; `to` is the
+ * report's email setting, resolved later by reportEmail_.
  */
-function saveReportPdf_(folderName, filename, pdfBlob, email, subject, text) {
+function saveReportPdf_(folderName, filename, pdfBlob, to) {
   pdfBlob.setName(filename);
   const folder = getReportFolder_(folderName);
   const existing = folder.getFilesByName(filename);
   while (existing.hasNext()) existing.next().setTrashed(true);
   const file = folder.createFile(pdfBlob);
   Logger.log('Report saved: ' + file.getUrl());
-  if (email) {
-    MailApp.sendEmail(email, subject, text,
-      { attachments: [pdfBlob], name: 'PruittHealth Jobsite Sign In' });
+  return { name: filename, url: file.getUrl(), blob: pdfBlob, to: to };
+}
+
+/**
+ * Where a report's email goes: its own override constant if set, otherwise
+ * the REPORT_EMAIL Script Property. '' means don't email.
+ */
+function reportEmail_(override) {
+  const own = String(override || '').trim();
+  if (own) return own;
+  return String(PropertiesService.getScriptProperties().getProperty('REPORT_EMAIL') || '').trim();
+}
+
+/**
+ * Sends one email per recipient with all of that recipient's report PDFs
+ * attached and a list of their Drive links. opts.errors lists reports that
+ * failed, so the email says what's missing. opts.sendIfEmpty is a list of
+ * report email settings to notify when there were no reports at all, so a
+ * quiet week still produces a "nothing recorded" email instead of silence.
+ */
+function emailReports_(items, subject, intro, opts) {
+  opts = opts || {};
+  const errors = opts.errors || [];
+  const byTo = {};
+  items.forEach(it => {
+    const to = reportEmail_(it.to);
+    if (!to) return;
+    (byTo[to] = byTo[to] || []).push(it);
+  });
+  if (!items.length) {
+    (opts.sendIfEmpty || []).map(reportEmail_).filter(Boolean)
+      .forEach(to => { byTo[to] = byTo[to] || []; });
+  }
+
+  const errorText = errors.length
+    ? '\n\nThese could not be generated and need a look:\n' + errors.map(e => '• ' + e).join('\n')
+    : '';
+  Object.keys(byTo).forEach(to => {
+    const list = byTo[to];
+    const listing = list.length
+      ? list.map(it => '• ' + it.name + '\n  ' + it.url).join('\n')
+      : 'No activity was recorded for this period, so there are no reports.';
+    MailApp.sendEmail(to, subject, intro + '\n\n' + listing + errorText, {
+      attachments: list.map(it => it.blob),
+      name: 'PruittHealth Jobsite Sign In'
+    });
+    Logger.log('Emailed ' + list.length + ' report(s) to ' + to);
+  });
+  if (!Object.keys(byTo).length) {
+    Logger.log('No report email set (REPORT_EMAIL Script Property is empty); PDFs saved to Drive only.');
   }
 }
 
@@ -651,13 +722,14 @@ function getReportFolder_(name) {
 /**
  * Shared by the daily and weekly safety meeting exports. Collects
  * SafetyMeetings rows whose submit date falls in [fromDate, toDate]
- * (yyyy-MM-dd, inclusive) and saves one PDF per project.
+ * (yyyy-MM-dd, inclusive), saves one PDF per project, and returns the saved
+ * reports for emailReports_.
  */
-function writeSafetyMeetingReports_(fromDate, toDate, fileLabel, emailWord) {
+function writeSafetyMeetingReports_(fromDate, toDate, fileLabel) {
   const periodLabel = fromDate === toDate ? fromDate : fromDate + ' to ' + toDate;
   const sheet = getSafetyMeetingSheet_();
   const last = sheet.getLastRow();
-  if (last < 2) { Logger.log('No safety meeting rows yet.'); return; }
+  if (last < 2) { Logger.log('No safety meeting rows yet.'); return []; }
   const rows = sheet.getRange(2, 1, last - 1, SAFETY_MEETING_HEADERS.length).getValues();
 
   // Timestamp may come back as a Date object or a string depending on how
@@ -677,28 +749,24 @@ function writeSafetyMeetingReports_(fromDate, toDate, fileLabel, emailWord) {
   });
 
   const projects = Object.keys(byProject);
-  if (!projects.length) { Logger.log('No safety meetings recorded for ' + periodLabel + '.'); return; }
+  if (!projects.length) { Logger.log('No safety meetings recorded for ' + periodLabel + '.'); return []; }
 
-  projects.forEach(project => {
-    saveReportPdf_(SAFETY_REPORT_FOLDER_NAME,
-      safeName_(project) + ' ' + fileLabel + '.pdf',
-      buildSafetyMeetingPdf_(project, periodLabel, byProject[project]),
-      SAFETY_REPORT_EMAIL,
-      'Safety meeting report: ' + project + ', ' + periodLabel,
-      'Attached: ' + emailWord + ' safety meeting attendance report for ' + project + '.');
-  });
+  return projects.map(project => saveReportPdf_(SAFETY_REPORT_FOLDER_NAME,
+    safeName_(project) + ' ' + fileLabel + '.pdf',
+    buildSafetyMeetingPdf_(project, periodLabel, byProject[project]),
+    SAFETY_REPORT_EMAIL));
 }
 
 /**
  * Collects SignIns rows dated within [fromDate, toDate] (yyyy-MM-dd,
- * inclusive) and saves one PDF per site. Same Date-object-vs-string
- * normalization as dailyEmail.
+ * inclusive), saves one PDF per site, and returns the saved reports for
+ * emailReports_. Same Date-object-vs-string normalization as dailyEmail.
  */
 function writeSignInReports_(fromDate, toDate, fileLabel) {
   const periodLabel = fromDate === toDate ? fromDate : fromDate + ' to ' + toDate;
   const sheet = getSheet_();
   const last = sheet.getLastRow();
-  if (last < 2) { Logger.log('No sign in rows yet.'); return; }
+  if (last < 2) { Logger.log('No sign in rows yet.'); return []; }
   const rows = sheet.getRange(2, 1, last - 1, HEADERS.length).getValues();
 
   const bySite = {};
@@ -715,16 +783,12 @@ function writeSignInReports_(fromDate, toDate, fileLabel) {
   });
 
   const sites = Object.keys(bySite);
-  if (!sites.length) { Logger.log('No jobsite sign ins recorded for ' + periodLabel + '.'); return; }
+  if (!sites.length) { Logger.log('No jobsite sign ins recorded for ' + periodLabel + '.'); return []; }
 
-  sites.forEach(site => {
-    saveReportPdf_(SIGNIN_REPORT_FOLDER_NAME,
-      safeName_(site) + ' ' + fileLabel + '.pdf',
-      buildSignInPdf_(site, periodLabel, summarizeSignIns_(bySite[site])),
-      SIGNIN_REPORT_EMAIL,
-      'Jobsite sign in report: ' + site + ', ' + periodLabel,
-      'Attached: the jobsite sign in report for ' + site + ', ' + periodLabel + '.');
-  });
+  return sites.map(site => saveReportPdf_(SIGNIN_REPORT_FOLDER_NAME,
+    safeName_(site) + ' ' + fileLabel + '.pdf',
+    buildSignInPdf_(site, periodLabel, summarizeSignIns_(bySite[site])),
+    SIGNIN_REPORT_EMAIL));
 }
 
 /**

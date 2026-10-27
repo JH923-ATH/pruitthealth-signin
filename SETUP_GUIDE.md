@@ -202,7 +202,18 @@ After a morning safety meeting, you can generate a printable PDF attendance repo
 
 1. In the Apps Script editor, in the function dropdown pick **exportSafetyMeetingReports**, click **Run**.
 2. It builds one PDF per project that had a safety meeting today, styled like the corporate PruittHealth letterhead (logo centered at the top, "CONSTRUCTION SERVICES" beneath, mint accent bar, brand green headings), listing the topic, who led it, and a table of attendees with their company, trade, and sign in time. PDFs land in a **Safety Meeting Reports** folder in your Drive (auto created the first time). The logo is embedded inside Code.gs itself, so there is nothing extra to upload. Running this from the editor uses whatever Code.gs is saved there, so after pasting a new Code.gs you can run it right away; redeploying is only needed for the phone app side.
-3. Optional: set `SAFETY_REPORT_EMAIL` in the Code.gs CONFIG block to also email each PDF when it's generated, then redeploy as a **New version** (see the warning in Part C).
+3. To have the PDFs emailed too, set up the report email once (see **Report email** below). Each run sends one email with all of its PDFs attached.
+
+### Report email
+
+Report emails go to the address in a **Script Property** named `REPORT_EMAIL`, not to an address typed into Code.gs. That keeps the address out of the public GitHub repo, and it stays put when you paste in a newer Code.gs.
+
+1. In the Apps Script editor, click **Project Settings** (gear icon on the left).
+2. Scroll to **Script Properties** and click **Add script property**.
+3. Property: `REPORT_EMAIL`. Value: the address to send to, e.g. your work email. For several people, comma separate them.
+4. Click **Save script properties**.
+
+No redeploy is needed; the next report run picks it up. If `REPORT_EMAIL` is empty, reports are only saved to Drive. Advanced: `SAFETY_REPORT_EMAIL` and `SIGNIN_REPORT_EMAIL` in the Code.gs CONFIG block override `REPORT_EMAIL` for just that report; leave them blank normally.
 
 This only covers today's meetings, matching the normal "run it right after the briefing" workflow. For older dates, open the SafetyMeetings tab directly and use Sheets' own **File → Download** (PDF, CSV, Excel) after filtering or sorting to the rows you want.
 
@@ -212,8 +223,10 @@ Re-running `exportSafetyMeetingReports` for a project that already has a report 
 
 Two weekly reports run together on one schedule, each covering the **7 full days ending yesterday** with one PDF per project:
 
-* **Safety meetings** (`exportWeeklySafetyMeetingReports`): a section for each meeting in date order. Saved to **Safety Meeting Reports**, named like `Brookhaven Safety Meetings 2026-10-21 to 2026-10-27.pdf`, emailed too if `SAFETY_REPORT_EMAIL` is set.
-* **Jobsite sign ins** (`exportWeeklySignInReports`): a daily summary (people on site, hours, anyone who never signed out), manpower by company (worker days and hours), each day's sign ins with in/out times and hours, and the week's deliveries (driver, material, PO). Saved to **Jobsite Sign In Reports**, named like `Brookhaven Jobsite Sign Ins 2026-10-21 to 2026-10-27.pdf`, emailed too if `SIGNIN_REPORT_EMAIL` is set.
+* **Safety meetings** (`exportWeeklySafetyMeetingReports`): a section for each meeting in date order. Saved to **Safety Meeting Reports**, named like `Brookhaven Safety Meetings 2026-10-21 to 2026-10-27.pdf`.
+* **Jobsite sign ins** (`exportWeeklySignInReports`): a daily summary (people on site, hours, anyone who never signed out), manpower by company (worker days and hours), each day's sign ins with in/out times and hours, and the week's deliveries (driver, material, PO). Saved to **Jobsite Sign In Reports**, named like `Brookhaven Jobsite Sign Ins 2026-10-21 to 2026-10-27.pdf`.
+
+Both reports arrive together in **one email** (subject like `Weekly jobsite reports, 2026-10-23 to 2026-10-29`) with every PDF attached and Drive links listed, sent to `REPORT_EMAIL` (see **Report email** above). A week with no activity still sends a short "no activity" email so you know it ran. If one report fails, the email says which one.
 
 To have both run on their own every week:
 
