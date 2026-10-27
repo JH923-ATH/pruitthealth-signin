@@ -111,6 +111,12 @@ You will get a nightly email listing every sign in and sign out grouped by site.
 
 Once the Pages URL is live, generate a QR code that points to it. Any free QR generator works. Print one placard per site (they all point to the same URL because workers pick their site in the app). Weatherproof laminate is worth the two dollars.
 
+### Skipping the QR code for regulars
+
+The QR code is just a convenient way to get the Pages URL onto a phone without typing it; anyone can also bookmark that URL directly or, better, use their phone's **Add to Home Screen** (iOS Safari or Android Chrome, share menu → Add to Home Screen). That creates a tap-to-open icon with the PHCS name and icon below, no browser address bar, feels like a real app. Good for PruittHealth employees and regular subs who sign in daily; the QR code stays the easier path for one-time visitors and delivery drivers.
+
+This works because `manifest.json`, `apple-touch-icon.png`, `icon-192.png`, and `icon-512.png` are already in the repo and linked from `index.html`. The icons are currently a placeholder "PHCS" monogram in the brand colors; once you have the official logo (see Open Items in PROJECT_BRIEF.md), regenerate those three PNGs from it and nothing else needs to change.
+
 ---
 
 ## Part H. Delivery capture, OCR, and notifications

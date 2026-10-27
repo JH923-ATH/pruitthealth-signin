@@ -46,7 +46,7 @@ Working and debugged in local testing. NOT yet deployed by John. Deployment step
 
 ### Open items
 
-1. Obtain official PruittHealth logo file (transparent PNG of the tree mark) and add to repo as logo.png.
+1. Obtain official PruittHealth logo file (transparent PNG of the tree mark) and add to repo as logo.png. Once that exists, regenerate icon-192.png, icon-512.png, and apple-touch-icon.png (currently a placeholder "PHCS" monogram in the brand colors, used for "Add to Home Screen" icons; see SETUP_GUIDE.md) from the real logo instead.
 2. Obtain official brand hex codes and typeface name from marketing; swap into the marked spots.
 3. EHS review of the safety acknowledgment wording; bump SAFETY_VERSION on any change.
 4. Deploy per SETUP_GUIDE.md and run the test loop: sign in, verify row in Sheet, sign out, verify roster empties.
