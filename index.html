@@ -135,6 +135,12 @@
                   color: var(--ph-err); background: none; border: 0; padding: 4px 0;
                   cursor: pointer; font-family: inherit; text-decoration: underline; }
   .photo-remove:focus-visible { outline: 2px solid var(--ph-err); outline-offset: 2px; }
+  /* Show QR code view */
+  .qr-card { background: #fff; border: 1px solid var(--ph-line); border-radius: var(--radius);
+             box-shadow: var(--shadow); padding: 28px 24px 18px; text-align: center; }
+  .qr-img { display: block; width: 100%; max-width: 340px; height: auto; margin: 0 auto;
+            image-rendering: pixelated; }
+  .qr-cap { margin-top: 16px; font-size: 17px; font-weight: 800; color: var(--ph-dark); }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 </head>
@@ -265,12 +271,50 @@ function viewLanding() {
             ${SITES.map(s => `<option>${esc(s)}</option>`).join('')}
           </select></label>
       </div>
+      ${STAFF ? '<button class="btn btn-ghost" id="bShowQr">Show sign in QR code</button>' : ''}
     </div>`, 'Select your project');
   if (!configured()) banner('Setup incomplete: the Apps Script URL has not been pasted into this file yet. See SETUP_GUIDE.md.');
   document.getElementById('fSite').onchange = (e) => {
     if (!e.target.value) return;
     site = e.target.value;
     viewTypeChoice();
+  };
+  if (STAFF) document.getElementById('bShowQr').onclick = viewQr;
+}
+
+/* Staff link: the Show QR code button only appears when the page is opened
+   as index.html?staff (supers and John bookmark that, or add it to their
+   home screen). Workers use the plain link and gate QR, so they never see it.
+   Not a lock: the QR is the same one printed on the gate placards, so there
+   is nothing private behind it; this just keeps the button off workers'
+   screens. Staff mode also swaps in manifest-staff.json, whose start_url
+   keeps ?staff, so an "Add to Home Screen" icon made from the staff link
+   opens in staff mode (iOS gives home screen apps their own storage, so
+   remembering staff mode in localStorage wouldn't carry over). */
+const STAFF = new URLSearchParams(location.search).has('staff');
+if (STAFF) document.querySelector('link[rel="manifest"]').href = 'manifest-staff.json';
+
+/* Full screen QR code so a super can hold up their phone for the crew to
+   scan, same code as the gate placards (jobsite_qrcode_image_600.png encodes
+   the live Pages URL, without ?staff). The white padding around it is the quiet zone phone
+   cameras need to lock on. Asks the browser to keep the screen awake while
+   it's showing; browsers without the Wake Lock API just ignore that. */
+let qrWakeLock = null;
+function viewQr() {
+  render(`
+    <div class="stack">
+      <div class="qr-card">
+        <img class="qr-img" src="jobsite_qrcode_image_600.png" alt="QR code for the jobsite sign in page">
+        <p class="qr-cap">Scan with your phone camera to sign in</p>
+      </div>
+      <button class="btn btn-dark" id="bQrDone">Done</button>
+    </div>`, 'Scan to sign in');
+  try {
+    if (navigator.wakeLock) navigator.wakeLock.request('screen').then(l => { qrWakeLock = l; }).catch(() => {});
+  } catch (e) {}
+  document.getElementById('bQrDone').onclick = () => {
+    if (qrWakeLock) { qrWakeLock.release().catch(() => {}); qrWakeLock = null; }
+    viewLanding();
   };
 }
 

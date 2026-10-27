@@ -111,6 +111,16 @@ You will get a nightly email listing every sign in and sign out grouped by site.
 
 Once the Pages URL is live, generate a QR code that points to it. Any free QR generator works. Print one placard per site (they all point to the same URL because workers pick their site in the app). Weatherproof laminate is worth the two dollars.
 
+### Showing the QR code from your phone (staff only)
+
+Superintendents and the PM can pull the sign in QR code up on their own phone and hold it out for the crew to scan, handy when a placard is missing or someone is signing in away from the gate.
+
+1. Open the **staff link**: the normal Pages URL with `?staff` on the end, e.g. `https://jh923-ath.github.io/pruitthealth-signin/?staff`.
+2. Bookmark it, or **Add to Home Screen** from that page; the icon keeps staff mode.
+3. On the first screen, tap **Show sign in QR code**. The screen stays on while it's showing; tap **Done** to go back.
+
+Workers use the plain link and the gate QR, so they never see the button. Only share the staff link with supers. It isn't a password: the QR it shows is the same one printed on the gate placards, so nothing private is behind it. It just keeps the button off workers' screens. The QR on screen points to the plain link, so anyone who scans it gets the normal worker view.
+
 ### Skipping the QR code for regulars
 
 The QR code is just a convenient way to get the Pages URL onto a phone without typing it; anyone can also bookmark that URL directly or, better, use their phone's **Add to Home Screen** (iOS Safari or Android Chrome, share menu → Add to Home Screen). That creates a tap-to-open icon with the PHCS name and icon below, no browser address bar, feels like a real app. Good for PruittHealth employees and regular subs who sign in daily; the QR code stays the easier path for one-time visitors and delivery drivers.
