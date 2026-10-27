@@ -210,7 +210,7 @@ Re-running `exportSafetyMeetingReports` for a project that already has a report 
 
 ### Weekly reports (automatic)
 
-Two weekly reports run together on one schedule, each covering the **last 7 days** with one PDF per project:
+Two weekly reports run together on one schedule, each covering the **7 full days ending yesterday** with one PDF per project:
 
 * **Safety meetings** (`exportWeeklySafetyMeetingReports`): a section for each meeting in date order. Saved to **Safety Meeting Reports**, named like `Brookhaven Safety Meetings 2026-10-21 to 2026-10-27.pdf`, emailed too if `SAFETY_REPORT_EMAIL` is set.
 * **Jobsite sign ins** (`exportWeeklySignInReports`): a daily summary (people on site, hours, anyone who never signed out), manpower by company (worker days and hours), each day's sign ins with in/out times and hours, and the week's deliveries (driver, material, PO). Saved to **Jobsite Sign In Reports**, named like `Brookhaven Jobsite Sign Ins 2026-10-21 to 2026-10-27.pdf`, emailed too if `SIGNIN_REPORT_EMAIL` is set.
@@ -218,7 +218,7 @@ Two weekly reports run together on one schedule, each covering the **last 7 days
 To have both run on their own every week:
 
 1. In the Apps Script editor, pick **installWeeklyReportTrigger** in the function dropdown and click **Run** (once). Approve the extra permission if Google asks.
-2. That's it. By default they run every **Friday around 4 PM Eastern**, so each report covers Saturday through Friday.
+2. That's it. By default they run every **Friday between 5 and 6 AM Eastern**, so they're ready first thing. Each report covers last Friday through Thursday; that Friday morning itself is left out and lands in the next week's report, so nothing is missed or counted twice. If you run a weekly report by hand on some other day, it still covers the 7 days before that day.
 
 To change the day or time, edit `WEEKLY_REPORT_WEEKDAY` (MONDAY to SUNDAY) and `WEEKLY_REPORT_HOUR` (0 to 23) in the Code.gs CONFIG block, save, and run **installWeeklyReportTrigger** again; it replaces the old schedule rather than adding a second one. To stop the weekly reports, open **Triggers** (clock icon on the left) and delete the `exportWeeklyReports` trigger. You can also run **exportWeeklySafetyMeetingReports** or **exportWeeklySignInReports** by hand any time for an on demand report.
 

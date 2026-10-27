@@ -76,8 +76,8 @@ const SAFETY_MEETING_HEADERS    = [
   'Name', 'Company', 'Trade', 'Safety Ack'
 ];
 // Report PDF exports. exportSafetyMeetingReports (today's safety meetings) is
-// run by hand from the Apps Script editor. exportWeeklyReports (last 7 days of
-// safety meetings AND jobsite sign ins) runs on its own once
+// run by hand from the Apps Script editor. exportWeeklyReports (the 7 full days
+// ending yesterday, safety meetings AND jobsite sign ins) runs on its own once
 // installWeeklyReportTrigger has been run once. Emails are optional; blank
 // means the PDFs are only saved to Drive, no email sent.
 const SAFETY_REPORT_FOLDER_NAME = 'Safety Meeting Reports';
@@ -87,7 +87,7 @@ const SIGNIN_REPORT_EMAIL = '';   // e.g. 'you@pruitthealth.com'. Blank = no ema
 // When the weekly reports run. Day is MONDAY..SUNDAY; hour is 0-23 Eastern.
 // After changing either, run installWeeklyReportTrigger again.
 const WEEKLY_REPORT_WEEKDAY = 'FRIDAY';
-const WEEKLY_REPORT_HOUR    = 16;   // 4 PM
+const WEEKLY_REPORT_HOUR    = 5;    // 5 AM, so reports are ready first thing
 const DAILY_EMAIL = '';   // e.g. 'you@pruitthealth.com'
 
 const DELIVERY_ALERT_PRIMARY = '';   // e.g. 'you@pruitthealth.com'. Blank = feature off.
@@ -555,24 +555,24 @@ function exportWeeklyReports() {
 }
 
 /**
- * Weekly safety meeting roll up: one PDF per project covering the last 7 days
- * (today plus the 6 days before), with a section per meeting in date order.
- * With the default Friday 4 PM schedule the window is Saturday through Friday.
- * Can also be run by hand from the editor.
+ * Weekly safety meeting roll up: one PDF per project covering the 7 full days
+ * ending yesterday (see lastFullWeek_), with a section per meeting in date
+ * order. Can also be run by hand from the editor.
  */
 function exportWeeklySafetyMeetingReports() {
-  const w = lastSevenDays_();
-  writeSafetyMeetingReports_(w.from, w.to, 'Safety Meetings ' + w.from + ' to ' + w.to, "this week's");
+  const w = lastFullWeek_();
+  writeSafetyMeetingReports_(w.from, w.to, 'Safety Meetings ' + w.from + ' to ' + w.to, "the past week's");
 }
 
 /**
- * Weekly jobsite sign in roll up: one PDF per site covering the last 7 days,
+ * Weekly jobsite sign in roll up: one PDF per site covering the 7 full days
+ * ending yesterday,
  * with a daily headcount/hours summary, manpower by company, each person's
  * in/out times per day (never signed out flagged), and the week's deliveries.
  * Can also be run by hand from the editor.
  */
 function exportWeeklySignInReports() {
-  const w = lastSevenDays_();
+  const w = lastFullWeek_();
   writeSignInReports_(w.from, w.to, 'Jobsite Sign Ins ' + w.from + ' to ' + w.to);
 }
 
@@ -603,12 +603,19 @@ function installWeeklyReportTrigger() {
              ' around ' + WEEKLY_REPORT_HOUR + ':00 ' + TIMEZONE);
 }
 
-/** { from, to } as yyyy-MM-dd for today and the 6 days before, in TIMEZONE. */
-function lastSevenDays_() {
+/**
+ * { from, to } as yyyy-MM-dd for the 7 full days ending yesterday, in
+ * TIMEZONE. Today is left out on purpose: the report runs early in the
+ * morning, so today is barely started and is covered by next week's report
+ * instead. Run every Friday, each report is last Friday through Thursday and
+ * picks up exactly where the previous one ended, with no gaps or overlaps.
+ */
+function lastFullWeek_() {
   const now = new Date();
+  const day = 24 * 60 * 60 * 1000;
   return {
-    from: Utilities.formatDate(new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000), TIMEZONE, 'yyyy-MM-dd'),
-    to:   Utilities.formatDate(now, TIMEZONE, 'yyyy-MM-dd')
+    from: Utilities.formatDate(new Date(now.getTime() - 7 * day), TIMEZONE, 'yyyy-MM-dd'),
+    to:   Utilities.formatDate(new Date(now.getTime() - 1 * day), TIMEZONE, 'yyyy-MM-dd')
   };
 }
 
