@@ -49,7 +49,7 @@
   header { background: #fff; border-bottom: 1px solid var(--ph-line); box-shadow: var(--shadow); }
   .accent { height: 6px; background: linear-gradient(90deg, var(--ph-dark), var(--ph-green)); }
   .head-inner { padding: 18px 20px 16px; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
-  .logo { height: 40px; width: auto; max-width: 100%; flex: none; }
+  .logo { height: 52px; width: auto; max-width: 100%; flex: none; }
   /* logo.png already contains the "PruittHealth" wordmark, so the text
      wordmark only shows if the image fails to load. */
   .brand .wordmark { display: none; font-size: 22px; font-weight: 900; letter-spacing: -.01em; color: var(--ph-dark); line-height: 1.1; }
@@ -217,6 +217,22 @@ const SAFETY_TOPICS = [
   "Other",
 ];
 
+/* Meeting types for the On-site meeting sign in. Saved in the Meeting Type
+   column of the Meetings tab. "Other" reveals a free text field. Edit this
+   list anytime, no code changes needed elsewhere. */
+const MEETING_TYPES = [
+  "OAC meeting",
+  "Bid job walk",
+  "Preconstruction / kickoff",
+  "Subcontractor coordination",
+  "Site walk",
+  "Inspection",
+  "Punch list walk",
+  "Owner / facility meeting",
+  "Visitor",
+  "Other",
+];
+
 /* Photo compression settings. 900px longest side + JPEG q0.72 keeps most
    delivery photos under 250 KB while staying legible. Modern camera photos
    are 12-50 MP; decoding them uses 30-100 MB per photo. On two-photo flows
@@ -374,6 +390,11 @@ function viewMeetingForm() {
   render(`
     <div class="stack">
       <div class="card stack">
+        <label><span class="lab">Meeting type</span>
+          <select id="mType"><option value="">Select meeting type&hellip;</option>
+            ${MEETING_TYPES.map(t => `<option>${esc(t)}</option>`).join('')}</select></label>
+        <label id="mTypeOtherRow" style="display:none"><span class="lab">Describe the meeting</span>
+          <input id="mTypeOther" placeholder="Type the kind of meeting"></label>
         <label><span class="lab">Meeting date</span>
           <input id="mDate" type="date" value="${todayStr()}"></label>
         <label><span class="lab">Your name</span>
@@ -393,8 +414,17 @@ function viewMeetingForm() {
   if (!configured()) banner('Setup incomplete: the Apps Script URL has not been pasted into this file yet. See SETUP_GUIDE.md.');
   document.getElementById('bBack').onclick = viewTypeChoice;
 
+  const typeSelect = document.getElementById('mType');
+  typeSelect.onchange = () => {
+    document.getElementById('mTypeOtherRow').style.display = typeSelect.value === 'Other' ? '' : 'none';
+  };
+
   document.getElementById('mGo').onclick = async () => {
     clearBanners();
+    const typePicked = typeSelect.value;
+    const meetingType = typePicked === 'Other'
+      ? document.getElementById('mTypeOther').value.trim()
+      : typePicked;
     const date  = document.getElementById('mDate').value;
     const name  = document.getElementById('mName').value.trim();
     const co    = document.getElementById('mCo').value.trim();
@@ -402,13 +432,15 @@ function viewMeetingForm() {
     const email = document.getElementById('mEmail').value.trim();
     const phone = document.getElementById('mPhone').value.trim();
 
+    if (!typePicked)  { banner('Meeting type is required.'); return; }
+    if (!meetingType) { banner('Describe the meeting.'); return; }
     if (!date)    { banner('Meeting date is required.'); return; }
     if (!name)    { banner('Your name is required.'); return; }
     if (!email)   { banner('Email is required.'); return; }
     if (!emailOk(email)) { banner('Enter a valid email address.'); return; }
 
     const payload = {
-      action: 'MeetingSignIn', meetingType: 'On-Site Meeting',
+      action: 'MeetingSignIn', meetingType,
       project: site, date, name, company: co, role, email, phone
     };
     await submit(payload, "You're signed in for this meeting.", 'mGo', 'Saving…', viewLanding);

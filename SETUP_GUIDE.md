@@ -125,7 +125,7 @@ Workers use the plain link and the gate QR, so they never see the button. Only s
 
 The QR code is just a convenient way to get the Pages URL onto a phone without typing it; anyone can also bookmark that URL directly or, better, use their phone's **Add to Home Screen** (iOS Safari or Android Chrome, share menu → Add to Home Screen). That creates a tap-to-open icon with the PHCS name and icon below, no browser address bar, feels like a real app. Good for PruittHealth employees and regular subs who sign in daily; the QR code stays the easier path for one-time visitors and delivery drivers.
 
-This works because `manifest.json`, `apple-touch-icon.png`, `icon-192.png`, and `icon-512.png` are already in the repo and linked from `index.html`. The icons use the PruittHealth tree mark from `logo.png` on a brand green tile.
+This works because `manifest.json`, `apple-touch-icon.png`, `icon-192.png`, and `icon-512.png` are already in the repo and linked from `index.html`. The icons are the PruittHealth tree mark on a white tile with **PHCS** underneath, so they stand out on a home screen.
 
 ---
 
@@ -193,6 +193,12 @@ If you skip this step, delivery sign in still works but OCR is silently skipped 
 **Delivery card does not appear.** You are running an older cached copy of `index.html`. Hard refresh the phone browser, or append `?v=X` to the URL to bust the cache.
 
 **Sign in stalls on "Saving and scanning" for more than 30 seconds.** Cell signal or a very large BOL photo. Try again on stronger signal.
+
+---
+
+## On-site meeting types
+
+The **On-site meeting sign in** asks attendees to pick a meeting type (OAC meeting, bid job walk, preconstruction / kickoff, subcontractor coordination, site walk, inspection, punch list walk, owner / facility meeting, visitor, or Other with a description). It lands in the **Meeting Type** column of the **Meetings** tab. To change the list, edit `MEETING_TYPES` near the top of `index.html`; nothing in Apps Script needs to change.
 
 ---
 
