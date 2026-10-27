@@ -8,7 +8,8 @@
      of a generic bookmark, so regulars can skip the QR code after the first
      visit. See SETUP_GUIDE.md. -->
 <link rel="manifest" href="manifest.json">
-<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<!-- Icon file names carry a version: phones cache home screen icons by URL, so a changed icon needs a new name to show up. -->
+<link rel="apple-touch-icon" href="apple-touch-icon-v2.png">
 <meta name="theme-color" content="#0B4F30">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="PHCS Sign In">
@@ -149,7 +150,7 @@
   <header>
     <div class="accent"></div>
     <div class="head-inner">
-      <img class="logo" src="logo.png" alt="PruittHealth" onerror="this.closest('header').classList.add('no-logo')">
+      <img class="logo" src="logo.png?v=2" alt="PruittHealth" onerror="this.closest('header').classList.add('no-logo')">
       <div class="brand">
         <div class="wordmark">PruittHealth</div>
         <div class="division">Construction Services</div>

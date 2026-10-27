@@ -125,7 +125,7 @@ Workers use the plain link and the gate QR, so they never see the button. Only s
 
 The QR code is just a convenient way to get the Pages URL onto a phone without typing it; anyone can also bookmark that URL directly or, better, use their phone's **Add to Home Screen** (iOS Safari or Android Chrome, share menu → Add to Home Screen). That creates a tap-to-open icon with the PHCS name and icon below, no browser address bar, feels like a real app. Good for PruittHealth employees and regular subs who sign in daily; the QR code stays the easier path for one-time visitors and delivery drivers.
 
-This works because `manifest.json`, `apple-touch-icon.png`, `icon-192.png`, and `icon-512.png` are already in the repo and linked from `index.html`. The icons are the PruittHealth tree mark on a white tile with **PHCS** underneath, so they stand out on a home screen.
+This works because `manifest.json`, `apple-touch-icon-v2.png`, `icon-192-v2.png`, and `icon-512-v2.png` are already in the repo and linked from `index.html`. The icons are the PruittHealth tree mark on a white tile with **PHCS** underneath, so they stand out on a home screen. If a phone still shows an old icon after an update, delete the shortcut, open the link in the browser once, and add it to the home screen again.
 
 ---
 
