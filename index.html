@@ -358,13 +358,50 @@ function viewMeetingForm() {
    handleSafetyMeeting_ into its own "SafetyMeetings" tab. One submission per
    attendee, so topic/leader/date repeat across everyone's row for that
    meeting — that redundancy is fine in a sheet and keeps each row self
-   contained for audit. */
-function viewSafetyMeetingForm() {
+   contained for audit.
+
+   Topic and leader are set once per project per day: whoever gets to this
+   screen first (normally the superintendent, running the meeting before
+   anyone else signs off) picks the topic and types who's leading it.
+   Everyone after sees those two fields locked to whatever was already set,
+   via a GET ?meetingTopic=<project> lookup against today's SafetyMeetings
+   rows (see getTodaysSafetyMeetingTopic_ in Code.gs), and only fills in
+   their own name, trade, and company. There is no login, so "first person
+   through" is an honor system assumption, same as every other field in this
+   app; it is not enforced server side. */
+async function viewSafetyMeetingForm() {
+  render('<p class="note">Checking today&rsquo;s safety meeting&hellip;</p>', site);
+  let existing = null;
+  let lookupFailed = false;
+  try {
+    const u = APP_URL + (APP_URL.includes('?') ? '&' : '?') +
+      'meetingTopic=' + encodeURIComponent(site);
+    const res = await fetch(u);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if (data && data.topic) existing = data;
+  } catch (e) {
+    lookupFailed = true;
+  }
+  renderSafetyMeetingForm_(existing);
+  if (lookupFailed) {
+    banner('Could not check for an already set up meeting. If one exists, enter the same topic so records match.');
+  }
+}
+
+function renderSafetyMeetingForm_(existing) {
+  const locked = !!existing;
   render(`
     <div class="stack">
       <div class="card stack">
         <label><span class="lab">Meeting date</span>
-          <input id="smDate" type="date" value="${todayStr()}"></label>
+          <input id="smDate" type="date" value="${todayStr()}" ${locked ? 'disabled' : ''}></label>
+        ${locked ? `
+        <div><span class="lab">Topic discussed</span>
+          <p class="note" style="margin:0">${esc(existing.topic)}</p></div>
+        <div><span class="lab">Led by</span>
+          <p class="note" style="margin:0">${esc(existing.leader || 'Not given')}</p></div>
+        ` : `
         <label><span class="lab">Topic discussed</span>
           <select id="smTopicSelect"><option value="">Select topic&hellip;</option>
             ${SAFETY_TOPICS.map(t => `<option>${esc(t)}</option>`).join('')}</select></label>
@@ -372,7 +409,9 @@ function viewSafetyMeetingForm() {
           <input id="smTopicOther" placeholder="Type the topic discussed"></label>
         <label><span class="lab">Meeting led by</span>
           <input id="smLeader" placeholder="Superintendent or safety lead"></label>
+        `}
       </div>
+      ${locked ? '' : `<div class="del-hint">No safety meeting set up for this project yet today. Whoever fills this in sets the topic and leader for everyone who signs off after.</div>`}
       <div class="card stack">
         <label><span class="lab">Your name</span>
           <input id="smName" autocomplete="name" placeholder="First and last name"></label>
@@ -396,27 +435,36 @@ function viewSafetyMeetingForm() {
   if (!configured()) banner('Setup incomplete: the Apps Script URL has not been pasted into this file yet. See SETUP_GUIDE.md.');
   document.getElementById('bBack').onclick = viewTypeChoice;
 
-  const topicSelect = document.getElementById('smTopicSelect');
-  const topicOtherRow = document.getElementById('smTopicOtherRow');
-  topicSelect.onchange = () => {
-    topicOtherRow.style.display = topicSelect.value === 'Other' ? '' : 'none';
-  };
+  let topicSelect, topicOtherRow;
+  if (!locked) {
+    topicSelect = document.getElementById('smTopicSelect');
+    topicOtherRow = document.getElementById('smTopicOtherRow');
+    topicSelect.onchange = () => {
+      topicOtherRow.style.display = topicSelect.value === 'Other' ? '' : 'none';
+    };
+  }
 
   document.getElementById('smGo').onclick = async () => {
     clearBanners();
-    const date = document.getElementById('smDate').value;
-    const topicPicked = topicSelect.value;
-    const topic  = topicPicked === 'Other'
-      ? document.getElementById('smTopicOther').value.trim()
-      : topicPicked;
-    const leader = document.getElementById('smLeader').value.trim();
-    const name   = document.getElementById('smName').value.trim();
-    const trade  = document.getElementById('smTrade').value;
-    const co     = document.getElementById('smCo').value.trim();
+    let topic, leader;
+    if (locked) {
+      topic = existing.topic;
+      leader = existing.leader;
+    } else {
+      const topicPicked = topicSelect.value;
+      if (!topicPicked) { banner('Topic discussed is required.'); return; }
+      topic = topicPicked === 'Other'
+        ? document.getElementById('smTopicOther').value.trim()
+        : topicPicked;
+      if (!topic) { banner('Describe the topic discussed.'); return; }
+      leader = document.getElementById('smLeader').value.trim();
+    }
+    const date  = locked ? todayStr() : document.getElementById('smDate').value;
+    const name  = document.getElementById('smName').value.trim();
+    const trade = document.getElementById('smTrade').value;
+    const co    = document.getElementById('smCo').value.trim();
 
     if (!date)  { banner('Meeting date is required.'); return; }
-    if (!topicPicked) { banner('Topic discussed is required.'); return; }
-    if (!topic) { banner('Describe the topic discussed.'); return; }
     if (!name)  { banner('Your name is required.'); return; }
     if (!co)    { banner('Company is required.'); return; }
     if (!document.getElementById('smAck').checked) {

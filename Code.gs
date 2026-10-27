@@ -267,21 +267,39 @@ function doPost(e) {
 
 
 /**
- * GET handler for the sign out roster.
- * Query: ?site=<siteName>
- * Returns a JSON array of { Name, Company, Trade, Timestamp } for people
- * currently on site at that site TODAY (signed in and not yet signed out).
+ * GET handler. Two independent lookups, picked by which query parameter is
+ * present:
  *
- * Locked down on purpose:
- *   - Only today. Any date parameter in the query is ignored.
- *   - Only people currently on site. Historical rows are never returned.
- *   - Never returns Safety Ack.
- *   - Never returns any delivery column (Material, PO, For Trade, Notes, Photo URL).
- *   - If site is missing or unknown, returns an empty array (not an error).
+ *   ?site=<siteName>
+ *     Sign out roster. Returns a JSON array of { Name, Company, Trade,
+ *     Timestamp } for people currently on site at that site TODAY (signed in
+ *     and not yet signed out).
+ *     Locked down on purpose:
+ *       - Only today. Any date parameter in the query is ignored.
+ *       - Only people currently on site. Historical rows are never returned.
+ *       - Never returns Safety Ack.
+ *       - Never returns any delivery column (Material, PO, For Trade, Notes,
+ *         Photo URL).
+ *       - If site is missing or unknown, returns an empty array (not an error).
+ *
+ *   ?meetingTopic=<project>
+ *     Today's safety meeting lookup, so index.html's Morning safety meeting
+ *     form can tell whether a topic/leader has already been set for that
+ *     project today (by whoever got there first, normally the
+ *     superintendent) and lock those fields for everyone after. Returns
+ *     { topic, leader } from the first matching SafetyMeetings row for that
+ *     project today, or {} if none yet. Equally locked down: only today,
+ *     only topic + leader, never an attendee's name, company, trade, or
+ *     Safety Ack. See handleSafetyMeeting_ for how rows are written.
  */
 function doGet(e) {
   try {
-    const site = (e && e.parameter && e.parameter.site) ? String(e.parameter.site) : '';
+    const params = (e && e.parameter) || {};
+    if (params.meetingTopic) {
+      return jsonOut_(getTodaysSafetyMeetingTopic_(String(params.meetingTopic)));
+    }
+
+    const site = params.site ? String(params.site) : '';
     if (!site) return jsonOut_([]);
 
     const today = Utilities.formatDate(new Date(), TIMEZONE, 'yyyy-MM-dd');
@@ -470,6 +488,29 @@ function getSafetyMeetingSheet_() {
     sh.getRange(1, 1, 1, SAFETY_MEETING_HEADERS.length).setFontWeight('bold');
   }
   return sh;
+}
+
+/**
+ * Finds the first SafetyMeetings row for a project today and returns its
+ * topic + leader, so index.html can lock those fields for everyone after
+ * whoever set them up (normally the superintendent, who is in practice the
+ * first person through). Returns {} if no meeting has been set up for that
+ * project yet today. Called from doGet's ?meetingTopic= branch; intentionally
+ * returns nothing beyond topic/leader (see doGet's doc comment).
+ */
+function getTodaysSafetyMeetingTopic_(project) {
+  const today = Utilities.formatDate(new Date(), TIMEZONE, 'yyyy-MM-dd');
+  const sheet = getSafetyMeetingSheet_();
+  const last = sheet.getLastRow();
+  if (last < 2) return {};
+  const rows = sheet.getRange(2, 1, last - 1, SAFETY_MEETING_HEADERS.length).getValues();
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    if (toTimestampStr_(r[0]).slice(0, 10) !== today) continue;
+    if (String(r[1]) !== project) continue;
+    return { topic: String(r[3]), leader: String(r[4]) };
+  }
+  return {};
 }
 
 
