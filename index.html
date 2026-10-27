@@ -266,11 +266,20 @@ function viewTypeChoice() {
         </span>
         <span class="cchev">&#8250;</span>
       </button>
+      <button class="choice" id="bSafetyMeeting">
+        <span class="cico">&#129466;</span>
+        <span class="ctxt">
+          <span class="ctitle">Morning safety meeting</span>
+          <span class="cdesc">Toolbox talk attendance acknowledgement</span>
+        </span>
+        <span class="cchev">&#8250;</span>
+      </button>
       <button class="btn btn-ghost" id="bBackLanding">&#8592; Change project</button>
     </div>`, site);
   document.getElementById('bJobsite').onclick = viewAction;
   document.getElementById('bDelivery').onclick = () => viewSignIn('Delivery');
   document.getElementById('bMeeting').onclick = viewMeetingForm;
+  document.getElementById('bSafetyMeeting').onclick = viewSafetyMeetingForm;
   document.getElementById('bBackLanding').onclick = viewLanding;
 }
 
@@ -320,6 +329,74 @@ function viewMeetingForm() {
       project: site, date, name, company: co, role, email, phone
     };
     await submit(payload, "You're signed in for this meeting.", 'mGo', 'Saving…', viewLanding);
+  };
+}
+
+/* Morning (or weekly) safety meeting attendance. Documents that a
+   subcontractor attended and acknowledged that day's toolbox talk, separate
+   from the per sign in safety checkbox in viewSignIn. Project comes from the
+   shared picker above. Posts action: 'SafetyMeeting', handled server side by
+   handleSafetyMeeting_ into its own "SafetyMeetings" tab. One submission per
+   attendee, so topic/leader/date repeat across everyone's row for that
+   meeting — that redundancy is fine in a sheet and keeps each row self
+   contained for audit. */
+function viewSafetyMeetingForm() {
+  render(`
+    <div class="stack">
+      <div class="card stack">
+        <label><span class="lab">Meeting date</span>
+          <input id="smDate" type="date" value="${todayStr()}"></label>
+        <label><span class="lab">Topic discussed</span>
+          <input id="smTopic" placeholder="e.g. Ladder safety, heat stress"></label>
+        <label><span class="lab">Meeting led by</span>
+          <input id="smLeader" placeholder="Superintendent or safety lead"></label>
+      </div>
+      <div class="card stack">
+        <label><span class="lab">Your name</span>
+          <input id="smName" autocomplete="name" placeholder="First and last name"></label>
+        <label><span class="lab">Trade</span>
+          <select id="smTrade"><option value="">Select trade&hellip;</option>
+            ${TRADES.map(t => `<option>${esc(t)}</option>`).join('')}</select></label>
+        <label><span class="lab">Company</span>
+          <input id="smCo" placeholder="Who you work for"></label>
+      </div>
+      <div class="rules">
+        <span class="lab">Site safety requirements</span>
+        <ul>${SAFETY_RULES.map(r => `<li>${esc(r)}</li>`).join('')}</ul>
+      </div>
+      <label class="ackrow">
+        <input type="checkbox" id="smAck">
+        <span>I attended this safety meeting and acknowledge the above requirements</span>
+      </label>
+      <button class="btn btn-green" id="smGo">Sign in</button>
+      <button class="btn btn-ghost" id="bBack">&#8592; Back</button>
+    </div>`, site);
+  if (!configured()) banner('Setup incomplete: the Apps Script URL has not been pasted into this file yet. See SETUP_GUIDE.md.');
+  document.getElementById('bBack').onclick = viewTypeChoice;
+
+  document.getElementById('smGo').onclick = async () => {
+    clearBanners();
+    const date   = document.getElementById('smDate').value;
+    const topic  = document.getElementById('smTopic').value.trim();
+    const leader = document.getElementById('smLeader').value.trim();
+    const name   = document.getElementById('smName').value.trim();
+    const trade  = document.getElementById('smTrade').value;
+    const co     = document.getElementById('smCo').value.trim();
+
+    if (!date)  { banner('Meeting date is required.'); return; }
+    if (!topic) { banner('Topic discussed is required.'); return; }
+    if (!name)  { banner('Your name is required.'); return; }
+    if (!co)    { banner('Company is required.'); return; }
+    if (!document.getElementById('smAck').checked) {
+      banner('You must confirm you attended and agree to the safety requirements.');
+      return;
+    }
+
+    const payload = {
+      action: 'SafetyMeeting', project: site, date, topic, leader,
+      name, company: co, trade: trade || 'Not given', ack: SAFETY_VERSION
+    };
+    await submit(payload, "You're recorded as attending this safety meeting.", 'smGo', 'Saving…', viewLanding);
   };
 }
 
@@ -735,7 +812,7 @@ async function submit(payload, doneText, btnId, busyText, afterView) {
     if (btn) {
       btn.disabled = false;
       if (btnId === 'bGo') btn.textContent = 'Sign in now';
-      else if (btnId === 'mGo') btn.textContent = 'Sign in';
+      else if (btnId === 'mGo' || btnId === 'smGo') btn.textContent = 'Sign in';
     }
   }
 }

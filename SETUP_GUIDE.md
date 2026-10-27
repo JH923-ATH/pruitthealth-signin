@@ -180,6 +180,28 @@ If you skip this step, delivery sign in still works but OCR is silently skipped 
 
 ---
 
+## Part I. Morning safety meeting (toolbox talk) attendance
+
+No extra deployment needed; it uses the same `/exec` URL and the same `Code.gs` already deployed.
+
+On the landing choice screen, workers can pick **Morning safety meeting** instead of a jobsite sign in. Each attendee enters the meeting date, topic, and who led it, plus their own name, trade, and company, and checks the same site safety acknowledgement. One row is written per attendee to a new **SafetyMeetings** tab (created automatically on first submission, same as the **Meetings** tab).
+
+Run it daily or weekly, whichever fits the site; the tool does not assume a cadence. It is independent of the per sign in safety checkbox in the regular jobsite flow, so a worker can show up in both tabs on the same day.
+
+### Exporting a report
+
+After a morning safety meeting, you can generate a printable PDF attendance report instead of reading the raw SafetyMeetings tab:
+
+1. In the Apps Script editor, in the function dropdown pick **exportSafetyMeetingReports**, click **Run**.
+2. It builds one PDF per project that had a safety meeting today, listing the topic, who led it, and a table of attendees with their company, trade, and sign in time. PDFs land in a **Safety Meeting Reports** folder in your Drive (auto created the first time).
+3. Optional: set `SAFETY_REPORT_EMAIL` in the Code.gs CONFIG block to also email each PDF when it's generated, then redeploy as a **New version** (see the warning in Part C).
+
+This only covers today's meetings, matching the normal "run it right after the briefing" workflow. For older dates, open the SafetyMeetings tab directly and use Sheets' own **File → Download** (PDF, CSV, Excel) after filtering or sorting to the rows you want.
+
+Re-running `exportSafetyMeetingReports` for a project that already has a report today replaces the old PDF rather than creating duplicates.
+
+---
+
 ## Troubleshooting
 
 **Phone shows the setup incomplete banner.** You did not paste the `/exec` URL into `index.html`, or you pasted it without the quotes. Fix and re upload to GitHub.

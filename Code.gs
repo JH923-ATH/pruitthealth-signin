@@ -28,6 +28,13 @@
  *     to this same web app, handled by handleMeetingSignIn_ into its own
  *     "Meetings" tab. Independent of the SignIns contract above.
  *
+ *   Separately again, index.html's "Morning Safety Meeting" choice posts
+ *     { action: 'SafetyMeeting', ... } to this same web app, handled by
+ *     handleSafetyMeeting_ into its own "SafetyMeetings" tab. Documents that
+ *     a subcontractor attended and acknowledged that day's (or week's)
+ *     toolbox talk; independent of the SignIns contract and the per sign in
+ *     safety checkbox, so a worker can appear in both.
+ *
  * When redeploying after a code change, use:
  *   Deploy → Manage deployments → pencil icon on the existing deployment → New version
  * A brand new deployment would issue a new /exec URL and orphan the QR codes.
@@ -59,6 +66,20 @@ const MEETING_HEADERS    = [
   'Timestamp', 'Meeting Type', 'Project', 'Meeting Date',
   'Name', 'Company', 'Role', 'Email', 'Phone'
 ];
+
+// Morning (or weekly) safety meeting / toolbox talk attendance. Separate tab,
+// separate contract from both SignIns and Meetings above; one row per
+// attendee, created automatically on first submission.
+const SAFETY_MEETING_SHEET_NAME = 'SafetyMeetings';
+const SAFETY_MEETING_HEADERS    = [
+  'Timestamp', 'Project', 'Meeting Date', 'Topic', 'Leader',
+  'Name', 'Company', 'Trade', 'Safety Ack'
+];
+// Report PDF export (exportSafetyMeetingReports, run manually from the Apps
+// Script editor). SAFETY_REPORT_EMAIL is optional; blank means the PDFs are
+// only saved to Drive, no email sent.
+const SAFETY_REPORT_FOLDER_NAME = 'Safety Meeting Reports';
+const SAFETY_REPORT_EMAIL = '';   // e.g. 'you@pruitthealth.com'. Blank = no email.
 const DAILY_EMAIL = '';   // e.g. 'you@pruitthealth.com'
 
 const DELIVERY_ALERT_PRIMARY = '';   // e.g. 'you@pruitthealth.com'. Blank = feature off.
@@ -137,6 +158,9 @@ function doPost(e) {
     const action = String(p.action || '').trim();
     if (action === 'MeetingSignIn') {
       return handleMeetingSignIn_(p);
+    }
+    if (action === 'SafetyMeeting') {
+      return handleSafetyMeeting_(p);
     }
     if (action !== 'In' && action !== 'Out') {
       return jsonOut_({ ok: false, error: 'bad action' });
@@ -398,6 +422,180 @@ function getMeetingSheet_() {
     sh.getRange(1, 1, 1, MEETING_HEADERS.length).setFontWeight('bold');
   }
   return sh;
+}
+
+
+/* ---------- safety meeting (toolbox talk) attendance ---------- */
+
+/**
+ * Handles { action: 'SafetyMeeting', project, date, topic, leader, name,
+ * company, trade, ack } from index.html's "Morning Safety Meeting" choice.
+ * Documents that a subcontractor attended and acknowledged that day's (or
+ * week's) toolbox talk. Appends one row per attendee to the SafetyMeetings
+ * tab, creating the tab and header row on first use. Independent of the
+ * SignIns contract and the per sign in safety checkbox; a worker can appear
+ * in both, since they document different things (site access vs. a specific
+ * briefing).
+ * Returns { ok: true } or { ok: false, error }.
+ */
+function handleSafetyMeeting_(p) {
+  const project = trim_(p.project);
+  const date    = trim_(p.date);
+  const topic   = trim_(p.topic);
+  const name    = trim_(p.name);
+  const company = trim_(p.company);
+  if (!project || !date || !topic || !name || !company) {
+    return jsonOut_({ ok: false, error: 'missing field' });
+  }
+  const leader = trim_(p.leader);
+  const trade  = trim_(p.trade) || 'Not given';
+  const ack    = trim_(p.ack);
+
+  const tsStr = Utilities.formatDate(new Date(), TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
+
+  getSafetyMeetingSheet_().appendRow([
+    tsStr, project, date, topic, leader, name, company, trade, ack
+  ]);
+
+  return jsonOut_({ ok: true });
+}
+
+function getSafetyMeetingSheet_() {
+  const ss = SpreadsheetApp.getActive();
+  let sh = ss.getSheetByName(SAFETY_MEETING_SHEET_NAME);
+  if (!sh) {
+    sh = ss.insertSheet(SAFETY_MEETING_SHEET_NAME);
+    sh.getRange(1, 1, 1, SAFETY_MEETING_HEADERS.length).setValues([SAFETY_MEETING_HEADERS]);
+    sh.setFrozenRows(1);
+    sh.getRange(1, 1, 1, SAFETY_MEETING_HEADERS.length).setFontWeight('bold');
+  }
+  return sh;
+}
+
+
+/**
+ * Run this from the Apps Script editor (function dropdown: pick
+ * exportSafetyMeetingReports, click Run) any time after a morning safety
+ * meeting to produce a printable, signature-sheet-style PDF documenting who
+ * attended and acknowledged it. Not reachable through doGet / the public
+ * /exec URL, so it does not weaken the doGet lockdown; it only runs when a
+ * signed in Google user (you) triggers it from the script editor.
+ *
+ * Scope: only TODAY's rows in SafetyMeetings, one PDF per project that held
+ * a meeting today (a project can have more than one meeting entry the same
+ * day, e.g. a second shift toolbox talk; those are grouped into sections
+ * within that project's single PDF by topic + leader). PDFs are saved to a
+ * "Safety Meeting Reports" Drive folder (auto created). If SAFETY_REPORT_EMAIL
+ * is set, each PDF is also emailed.
+ *
+ * For historical dates, open the SafetyMeetings tab directly and use
+ * Google Sheets' own File > Download (PDF, CSV, Excel) after filtering or
+ * sorting to the rows you want; this function only covers "today," matching
+ * the normal workflow of running it right after that day's meeting(s).
+ *
+ * Safe to re-run: regenerating a report for a project that already has one
+ * today replaces the old PDF rather than piling up duplicates.
+ */
+function exportSafetyMeetingReports() {
+  const today = Utilities.formatDate(new Date(), TIMEZONE, 'yyyy-MM-dd');
+  const sheet = getSafetyMeetingSheet_();
+  const last = sheet.getLastRow();
+  if (last < 2) { Logger.log('No safety meeting rows yet.'); return; }
+  const rows = sheet.getRange(2, 1, last - 1, SAFETY_MEETING_HEADERS.length).getValues();
+
+  // Group today's rows by project. Timestamp may come back as a Date object
+  // or a string depending on how Sheets auto parsed it, so normalize first
+  // (same rationale as toTimestampStr_'s use elsewhere).
+  const byProject = {};
+  rows.forEach(r => {
+    const tsStr = toTimestampStr_(r[0]);
+    if (tsStr.slice(0, 10) !== today) return;
+    const project = String(r[1]);
+    byProject[project] = byProject[project] || [];
+    byProject[project].push({
+      ts: tsStr, topic: String(r[3]), leader: String(r[4]),
+      name: String(r[5]), company: String(r[6]), trade: String(r[7]), ack: String(r[8])
+    });
+  });
+
+  const projects = Object.keys(byProject);
+  if (!projects.length) { Logger.log('No safety meetings recorded today.'); return; }
+
+  const folder = getSafetyReportFolder_();
+  projects.forEach(project => {
+    const entries = byProject[project];
+    const pdfBlob = buildSafetyMeetingPdf_(project, today, entries);
+    const filename = 'Safety Meeting ' + today + ' - ' + project.replace(/[^A-Za-z0-9]+/g, '_') + '.pdf';
+    pdfBlob.setName(filename);
+
+    // Replace any existing report of the same name so re-runs don't pile up duplicates.
+    const existing = folder.getFilesByName(filename);
+    while (existing.hasNext()) existing.next().setTrashed(true);
+
+    const file = folder.createFile(pdfBlob);
+    Logger.log('Report saved: ' + file.getUrl());
+
+    if (SAFETY_REPORT_EMAIL) {
+      MailApp.sendEmail(SAFETY_REPORT_EMAIL,
+        'Safety meeting report - ' + project + ' - ' + today,
+        "Attached: today's safety meeting attendance report for " + project + '.',
+        { attachments: [pdfBlob], name: 'PruittHealth Jobsite Sign In' });
+    }
+  });
+}
+
+function getSafetyReportFolder_() {
+  const it = DriveApp.getFoldersByName(SAFETY_REPORT_FOLDER_NAME);
+  if (it.hasNext()) return it.next();
+  return DriveApp.createFolder(SAFETY_REPORT_FOLDER_NAME);
+}
+
+/**
+ * Build a printable, signature-sheet-style PDF for one project's safety
+ * meeting(s) on a given date: header with project/date, then one section per
+ * distinct topic + leader (usually just one), each with an attendee table.
+ * Creates a temporary Google Doc to get Apps Script's table/formatting
+ * support, exports it as a PDF blob, then trashes the temp Doc (same
+ * create-then-trash pattern as scanBol_'s OCR step) so Drive stays clean.
+ */
+function buildSafetyMeetingPdf_(project, dateStr, entries) {
+  const doc = DocumentApp.create('SafetyMeetingReport_temp_' + Date.now());
+  const body = doc.getBody();
+  body.setMarginTop(36).setMarginBottom(36).setMarginLeft(44).setMarginRight(44);
+
+  body.appendParagraph('PruittHealth Construction Services').setHeading(DocumentApp.ParagraphHeading.HEADING2);
+  body.appendParagraph('Safety Meeting Attendance Report').setHeading(DocumentApp.ParagraphHeading.TITLE);
+  body.appendParagraph('Project: ' + project);
+  body.appendParagraph('Date: ' + dateStr);
+
+  // Group this project's entries by topic + leader, in case more than one
+  // meeting happened the same day (e.g. a second shift toolbox talk).
+  const byMeeting = {};
+  entries.forEach(e => {
+    const key = e.topic + '|' + e.leader;
+    byMeeting[key] = byMeeting[key] || { topic: e.topic, leader: e.leader, attendees: [] };
+    byMeeting[key].attendees.push(e);
+  });
+
+  Object.keys(byMeeting).forEach(key => {
+    const m = byMeeting[key];
+    body.appendParagraph('');
+    body.appendParagraph('Topic: ' + (m.topic || 'Not given')).setBold(true);
+    body.appendParagraph('Led by: ' + (m.leader || 'Not given'));
+
+    const tableData = [['Name', 'Company', 'Trade', 'Time', 'Acknowledged']];
+    m.attendees.forEach(a => {
+      tableData.push([a.name, a.company, a.trade, a.ts.slice(11, 16), a.ack ? 'Yes (' + a.ack + ')' : 'Yes']);
+    });
+    const table = body.appendTable(tableData);
+    table.getRow(0).editAsText().setBold(true);
+  });
+
+  doc.saveAndClose();
+  const file = DriveApp.getFileById(doc.getId());
+  const pdfBlob = file.getAs('application/pdf');
+  file.setTrashed(true);
+  return pdfBlob;
 }
 
 
